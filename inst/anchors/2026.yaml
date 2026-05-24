@@ -1,0 +1,24 @@
+# Anchor players whose projections we sanity-check manually each run.
+# Layer A validation flags any anchor whose projected season points move
+# more than tolerance_pct between consecutive runs without a corresponding
+# adjustment entry. Catches data-pipeline regressions and methodology bugs.
+
+tolerance_pct: 10
+
+anchors:
+  QB:
+    - { name: "Josh Allen",          team: "BUF" }
+    - { name: "Lamar Jackson",       team: "BAL" }
+    - { name: "Patrick Mahomes",     team: "KC" }
+  RB:
+    - { name: "Bijan Robinson",      team: "ATL" }
+    - { name: "Christian McCaffrey", team: "SF" }
+    - { name: "Jahmyr Gibbs",        team: "DET" }
+  WR:
+    - { name: "CeeDee Lamb",         team: "DAL" }
+    - { name: "Justin Jefferson",    team: "MIN" }
+    - { name: "Tyreek Hill",         team: "MIA" }
+  TE:
+    - { name: "Sam LaPorta",         team: "DET" }
+    - { name: "Trey McBride",        team: "ARI" }
+    - { name: "Brock Bowers",        team: "LV" }

@@ -1,0 +1,34 @@
+Package: bestballBroSim
+Title: Best Ball Tournament Simulation and Projection Engine
+Version: 0.0.1
+Authors@R: person("Liberty", "Vincent", role = c("aut", "cre"),
+    email = "liberty@example.com")
+Description: Layer A (player projections + simulations) and Layer B
+    (tournament-aware pick EV pre-computation) engine for the BestBall Bro
+    Chrome extension. Publishes JSON projection and tournament-building-block
+    feeds to libertyvincent.github.io/bestball-bro-data, consumed by the
+    BestBall Bro extension during live Underdog Fantasy best ball drafts.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.1
+Depends:
+    R (>= 4.2.0)
+Imports:
+    nflreadr (>= 1.5.0),
+    nflfastR,
+    jsonlite,
+    yaml,
+    dplyr,
+    tidyr,
+    purrr,
+    arrow,
+    lubridate,
+    cli
+Suggests:
+    testthat (>= 3.0.0),
+    devtools,
+    roxygen2
+Remotes:
+    FantasyFootballAnalytics/ffanalytics
+Config/testthat/edition: 3

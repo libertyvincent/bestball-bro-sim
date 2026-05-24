@@ -1,0 +1,101 @@
+name: Build and publish feed
+
+# Daily during draft season (April–August), weekly during regular season.
+# Adjust the cron expression as the season transitions, or split into two
+# workflows with seasonal `on.schedule` blocks.
+on:
+  schedule:
+    - cron: '0 3 * * *'   # 03:00 UTC daily
+  workflow_dispatch:
+    inputs:
+      tournaments:
+        description: "Comma-separated tournament IDs to rebuild (default: all)"
+        required: false
+        default: "all"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360   # building blocks per tournament is the long pole
+
+    steps:
+      - name: Checkout sim repo
+        uses: actions/checkout@v4
+
+      - name: Set up R
+        uses: r-lib/actions/setup-r@v2
+        with:
+          r-version: '4.4'
+          use-public-rspm: true
+
+      - name: Install dependencies
+        uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          packages: |
+            any::nflreadr
+            any::nflfastR
+            any::ffanalytics
+            any::jsonlite
+            any::yaml
+            any::dplyr
+            any::tidyr
+            any::purrr
+            any::arrow
+            any::lubridate
+            any::cli
+            any::devtools
+
+      - name: Verify tournament configs parse
+        run: Rscript -e 'devtools::load_all(); invisible(lapply(list_tournaments(), load_tournament_config))'
+
+      - name: Build Layer A projections
+        run: |
+          Rscript -e '
+            devtools::load_all()
+            projections <- generate_projections()
+            saveRDS(projections, "build/projections.rds")
+          '
+
+      - name: Run season simulations
+        run: |
+          Rscript -e '
+            devtools::load_all()
+            projections <- readRDS("build/projections.rds")
+            draws <- run_season_sims(projections)
+            arrow::write_parquet(draws, "build/sim_draws.parquet")
+          '
+
+      - name: Pre-compute Layer B building blocks per tournament
+        run: |
+          Rscript -e '
+            devtools::load_all()
+            projections <- readRDS("build/projections.rds")
+            draws <- arrow::read_parquet("build/sim_draws.parquet")
+            for (tid in list_tournaments()) {
+              cli::cli_alert_info("Precomputing for {tid}")
+              cfg <- load_tournament_config(tid)
+              bb <- precompute_building_blocks(cfg, projections, draws)
+              publish_building_blocks(tid, bb, out_dir = "build/feed")
+            }
+          '
+
+      - name: Write feed artifacts
+        run: |
+          Rscript -e '
+            devtools::load_all()
+            projections <- readRDS("build/projections.rds")
+            draws <- arrow::read_parquet("build/sim_draws.parquet")
+            publish_projections(projections, out_dir = "build/feed")
+            publish_sim_draws(draws, out_dir = "build/feed")
+            publish_tournaments_index(out_dir = "build/feed")
+            publish_manifest(out_dir = "build/feed")
+          '
+
+      - name: Publish to bestball-bro-data
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          deploy_key: ${{ secrets.BESTBALL_BRO_DATA_DEPLOY_KEY }}
+          external_repository: libertyvincent/bestball-bro-data
+          publish_branch: main
+          publish_dir: build/feed
+          commit_message: "Automated feed update from bestball-bro-sim"

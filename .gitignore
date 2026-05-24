@@ -1,0 +1,38 @@
+# R
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+*.Rcheck/
+*.rds
+*.rda
+
+# renv
+renv/library/
+renv/local/
+renv/cellar/
+renv/lock/
+renv/python/
+renv/staging/
+
+# Build artifacts (CI produces these, never commit)
+build/
+*.parquet
+real_v0_feed/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Local-only — published versions live in bestball-bro-data
+inst/adp_snapshots/
+.Renviron
+
+# Claude Code per-user settings
+.claude/settings.local.json

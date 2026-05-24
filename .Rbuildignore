@@ -1,0 +1,12 @@
+^.*\.Rproj$
+^\.Rproj\.user$
+^\.github$
+^README\.Rmd$
+^LICENSE\.md$
+^\.gitignore$
+^LAYER_A\.md$
+^LAYER_B\.md$
+^FEED_SPEC\.md$
+^build$
+^renv$
+^renv\.lock$

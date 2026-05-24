@@ -1,0 +1,30 @@
+# Manual projection adjustments -- "knowing ball" overrides applied on top of
+# the base Layer A projections. Keyed by underdog_player_id (primary) or by
+# name|team|position (fallback for players without a UUID yet, e.g. pre-camp
+# rookies).
+#
+# Each entry can include:
+#   season_points_delta:    added to season fantasy point mean
+#   games_played_delta:     added to expected games played
+#   weekly_var_multiplier:  scales weekly variance (1.0 = no change, >1 = wider)
+#   notes:                  free text for future-self context (recommended)
+#
+# The Layer A pipeline applies these AFTER the base projection model runs,
+# logging every applied adjustment in the feed's _meta.user_adjustments_applied.
+
+adjustments: []
+
+# Example entries (commented; uncomment to use):
+#
+# - underdog_player_id: "2b0cbe83-48a2-41b0-b03f-42180cfc4b77"
+#   name: "Bijan Robinson"
+#   season_points_delta: 12.5
+#   games_played_delta: 0.5
+#   notes: "OL upgrades + new OC's RB usage history. Sticky."
+#
+# - name: "Example Rookie"
+#   team: "DAL"
+#   position: "WR"
+#   season_points_delta: -8.0
+#   weekly_var_multiplier: 1.3
+#   notes: "Crowded target tree. Wider variance until depth chart clarity."
