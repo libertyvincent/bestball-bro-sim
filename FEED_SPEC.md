@@ -16,32 +16,32 @@ The feed is a directory tree at the GitHub Pages root. Files are versioned by se
 
 ```
 bestball-bro-data/
-├── _meta.json                          # Manifest — discovered first, drives everything else
-├── tournaments_index.json              # Underdog contest title → tournament_id mapping
-├── v1/
-│   └── projections/
-│       └── nfl_2026.json               # Layer A — per-player projections (shared across tournaments)
-├── sim_draws/
-│   └── nfl_2026.parquet                # Layer A full sim draws (optional consumer)
-├── tournaments/
-│   ├── bbm_2026.json                   # BBM stage config
-│   ├── bbm_superflex_2026.json
-│   ├── big_board_2026.json
-│   ├── puppy_2026.json
-│   └── weekly_winners_2026.json
-├── building_blocks/
-│   ├── bbm_2026.json                   # Layer B output per tournament
-│   ├── bbm_superflex_2026.json
-│   ├── big_board_2026.json
-│   ├── puppy_2026.json
-│   └── weekly_winners_2026.json
-├── teams/
-│   └── nfl_2026.json                   # 32 NFL teams (existing, unchanged)
-├── scoring/
-│   └── half_ppr_underdog.json          # Scoring definition (referenced by tournament configs)
-└── payouts/
-    ├── bbm_2026_finals.csv             # Detailed payout distributions
-    └── ww_week_1.csv                   # (referenced from tournament configs by URL)
+├── _meta.json                              # Manifest — discovered first, drives everything else
+└── v1/
+    ├── tournaments_index.json              # Underdog contest title → tournament_id mapping
+    ├── projections/
+    │   └── nfl_2026.json                   # Layer A — per-player projections (shared across tournaments)
+    ├── sim_draws/
+    │   └── nfl_2026.parquet                # Layer A full sim draws (optional consumer)
+    ├── tournaments/
+    │   ├── bbm_2026.json                   # BBM stage config
+    │   ├── bbm_superflex_2026.json
+    │   ├── big_board_2026.json
+    │   ├── puppy_2026.json
+    │   └── weekly_winners_2026.json
+    ├── building_blocks/
+    │   ├── bbm_2026.json                   # Layer B output per tournament
+    │   ├── bbm_superflex_2026.json
+    │   ├── big_board_2026.json
+    │   ├── puppy_2026.json
+    │   └── weekly_winners_2026.json
+    ├── teams/
+    │   └── nfl_2026.json                   # 32 NFL teams (existing, unchanged)
+    ├── scoring/
+    │   └── half_ppr_underdog.json          # Scoring definition (referenced by tournament configs)
+    └── payouts/
+        ├── bbm_2026_finals.csv             # Detailed payout distributions
+        └── ww_week_1.csv                   # (referenced from tournament configs by URL)
 ```
 
 The extension fetches `_meta.json` first to discover available files and detect updates, then fetches the file paths listed there. This avoids hardcoding paths in the extension. Tournament configs and building blocks are looked up dynamically per active draft via `tournaments_index.json` — adding a new tournament is publishing two files and updating the index, no extension change.
@@ -75,19 +75,19 @@ Compatibility:
   "generated_at": "2026-08-15T03:00:00Z",
   "files": {
     "projections":       { "path": "v1/projections/nfl_2026.json",    "version": "0.3.0", "sha256": "..." },
-    "sim_draws":         { "path": "sim_draws/nfl_2026.parquet",      "version": "0.3.0", "sha256": "..." },
-    "tournaments_index": { "path": "tournaments_index.json",          "version": "1.0.0", "sha256": "..." },
-    "teams":             { "path": "teams/nfl_2026.json",             "version": "1.0.0", "sha256": "..." }
+    "sim_draws":         { "path": "v1/sim_draws/nfl_2026.parquet",   "version": "0.3.0", "sha256": "..." },
+    "tournaments_index": { "path": "v1/tournaments_index.json",       "version": "1.0.0", "sha256": "..." },
+    "teams":             { "path": "v1/teams/nfl_2026.json",          "version": "1.0.0", "sha256": "..." }
   },
   "tournaments": {
-    "bbm_2026":            { "config": "tournaments/bbm_2026.json",            "building_blocks": "building_blocks/bbm_2026.json",            "version": "0.3.0", "sha256": "..." },
-    "bbm_superflex_2026":  { "config": "tournaments/bbm_superflex_2026.json",  "building_blocks": "building_blocks/bbm_superflex_2026.json",  "version": "0.3.0", "sha256": "..." },
-    "big_board_2026":      { "config": "tournaments/big_board_2026.json",      "building_blocks": "building_blocks/big_board_2026.json",      "version": "0.3.0", "sha256": "..." },
-    "puppy_2026":          { "config": "tournaments/puppy_2026.json",          "building_blocks": "building_blocks/puppy_2026.json",          "version": "0.3.0", "sha256": "..." },
-    "weekly_winners_2026": { "config": "tournaments/weekly_winners_2026.json", "building_blocks": "building_blocks/weekly_winners_2026.json", "version": "0.3.0", "sha256": "..." }
+    "bbm_2026":            { "config": "v1/tournaments/bbm_2026.json",            "building_blocks": "v1/building_blocks/bbm_2026.json",            "version": "0.3.0", "sha256": "..." },
+    "bbm_superflex_2026":  { "config": "v1/tournaments/bbm_superflex_2026.json",  "building_blocks": "v1/building_blocks/bbm_superflex_2026.json",  "version": "0.3.0", "sha256": "..." },
+    "big_board_2026":      { "config": "v1/tournaments/big_board_2026.json",      "building_blocks": "v1/building_blocks/big_board_2026.json",      "version": "0.3.0", "sha256": "..." },
+    "puppy_2026":          { "config": "v1/tournaments/puppy_2026.json",          "building_blocks": "v1/building_blocks/puppy_2026.json",          "version": "0.3.0", "sha256": "..." },
+    "weekly_winners_2026": { "config": "v1/tournaments/weekly_winners_2026.json", "building_blocks": "v1/building_blocks/weekly_winners_2026.json", "version": "0.3.0", "sha256": "..." }
   },
   "scoring_systems": {
-    "half_ppr_underdog":   { "path": "scoring/half_ppr_underdog.json", "version": "1.0.0", "sha256": "..." }
+    "half_ppr_underdog":   { "path": "v1/scoring/half_ppr_underdog.json", "version": "1.0.0", "sha256": "..." }
   }
 }
 ```
@@ -175,7 +175,7 @@ This gradual-degradation pattern lets the feed evolve. Adding new fields never b
 
 ---
 
-## Sim draws schema (`sim_draws/nfl_2026.parquet`)
+## Sim draws schema (`v1/sim_draws/nfl_2026.parquet`)
 
 Parquet for efficiency (~80KB per player × 300 players × 10k draws would be ~240MB as JSON; ~20MB as Parquet).
 
@@ -199,7 +199,7 @@ Consumers: Layer B offline (R), future DFS optimizer (whatever language). Extens
 
 ---
 
-## Building blocks schema (`building_blocks/bbm_2026.json`)
+## Building blocks schema (`v1/building_blocks/bbm_2026.json`)
 
 Layer B's offline pre-computed outputs:
 
@@ -270,7 +270,7 @@ Coarse (every 3 picks: 1, 4, 7, ..., 217) keeps the table small (~300 players ×
 
 ---
 
-## Tournament schema (`tournaments/bbm_2026.json`)
+## Tournament schema (`v1/tournaments/bbm_2026.json`)
 
 The Layer B tournament YAML config, serialized to JSON for the extension to consume. The extension uses it for:
 - Decomposing BRO score (what payout structure does the advance prob convert against?)
@@ -280,7 +280,7 @@ Structure mirrors the YAML in `LAYER_B.md`.
 
 ---
 
-## Scoring schema (`scoring/half_ppr_underdog.json`)
+## Scoring schema (`v1/scoring/half_ppr_underdog.json`)
 
 ```jsonc
 {
@@ -322,7 +322,7 @@ The extension's existing `BBBRO_MATCH` module joins feed records to Underdog app
 
 ---
 
-## Tournament resolution (`tournaments_index.json`)
+## Tournament resolution (`v1/tournaments_index.json`)
 
 The extension's existing `_resolveContestTitle()` returns a contest title from one of four sources (`draft.title`, `tournament_rounds`, `weekly_winners`, `tournaments` cache). Matching that title to one of our tournament configs is a lookup in `tournaments_index.json`.
 
@@ -341,8 +341,8 @@ The extension's existing `_resolveContestTitle()` returns a contest title from o
         "BBM VII",
         "BBM7"
       ],
-      "config_url": "tournaments/bbm_2026.json",
-      "building_blocks_url": "building_blocks/bbm_2026.json"
+      "config_url": "v1/tournaments/bbm_2026.json",
+      "building_blocks_url": "v1/building_blocks/bbm_2026.json"
     },
     "bbm_superflex_2026": {
       "name": "Best Ball Mania Superflex",
@@ -351,18 +351,18 @@ The extension's existing `_resolveContestTitle()` returns a contest title from o
         "Best Ball Mania Superflex",
         "BBM Superflex"
       ],
-      "config_url": "tournaments/bbm_superflex_2026.json",
-      "building_blocks_url": "building_blocks/bbm_superflex_2026.json"
+      "config_url": "v1/tournaments/bbm_superflex_2026.json",
+      "building_blocks_url": "v1/building_blocks/bbm_superflex_2026.json"
     },
     "big_board_2026": {
       "name": "The Big Board",
       "season": 2026,
       "underdog_contest_titles": ["The Big Board", "Big Board"],
-      "config_url": "tournaments/big_board_2026.json",
-      "building_blocks_url": "building_blocks/big_board_2026.json"
+      "config_url": "v1/tournaments/big_board_2026.json",
+      "building_blocks_url": "v1/building_blocks/big_board_2026.json"
     },
-    "puppy_2026":          { "name": "The Puppy",         "season": 2026, "underdog_contest_titles": ["The Puppy", "Puppy"],                       "config_url": "tournaments/puppy_2026.json",          "building_blocks_url": "building_blocks/puppy_2026.json" },
-    "weekly_winners_2026": { "name": "Weekly Winners",    "season": 2026, "underdog_contest_titles": ["Weekly Winners", "Weekly Winner"],          "config_url": "tournaments/weekly_winners_2026.json", "building_blocks_url": "building_blocks/weekly_winners_2026.json" }
+    "puppy_2026":          { "name": "The Puppy",         "season": 2026, "underdog_contest_titles": ["The Puppy", "Puppy"],                       "config_url": "v1/tournaments/puppy_2026.json",          "building_blocks_url": "v1/building_blocks/puppy_2026.json" },
+    "weekly_winners_2026": { "name": "Weekly Winners",    "season": 2026, "underdog_contest_titles": ["Weekly Winners", "Weekly Winner"],          "config_url": "v1/tournaments/weekly_winners_2026.json", "building_blocks_url": "v1/building_blocks/weekly_winners_2026.json" }
   }
 }
 ```
@@ -378,7 +378,7 @@ The extension's existing `_resolveContestTitle()` returns a contest title from o
 
 When Underdog launches a new format (or names a satellite contest oddly), the workflow is:
 
-1. R sim project generates new `tournaments/{id}.json` + `building_blocks/{id}.json`
+1. R sim project generates new `v1/tournaments/{id}.json` + `v1/building_blocks/{id}.json`
 2. New entry in `tournaments_index.json` with the Underdog contest title alias(es)
 3. New entry in `_meta.json` under `tournaments`
 4. All three published to `bestball-bro-data`
