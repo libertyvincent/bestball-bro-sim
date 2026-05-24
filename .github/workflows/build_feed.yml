@@ -47,11 +47,21 @@ jobs:
       - name: Verify tournament configs parse
         run: Rscript -e 'devtools::load_all(); invisible(lapply(list_tournaments(), load_tournament_config))'
 
+      - name: Create build directories
+        # saveRDS / arrow::write_parquet do not auto-create parents; this also
+        # primes the feed tree so the publish_* functions write into an
+        # existing path.
+        run: mkdir -p build/feed/v1/projections
+
       - name: Build Layer A projections
+        # season is pinned to the active best ball draft season. nflreadr's
+        # current_season() lags behind during the offseason, so an explicit
+        # value avoids accidentally projecting the prior year. Bump this every
+        # year once the new season opens.
         run: |
           Rscript -e '
             devtools::load_all()
-            projections <- generate_projections()
+            projections <- generate_projections(season = 2026)
             saveRDS(projections, "build/projections.rds")
           '
 
