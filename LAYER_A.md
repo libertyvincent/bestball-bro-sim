@@ -10,6 +10,29 @@ This document defines the methodology, inputs, outputs, and validation approach 
 
 ---
 
+## v1 scope (current iteration)
+
+v1 is the next iteration after the v0 baseline (prior-season passthrough). It addresses the two biggest v0 gaps — rookies and missed games — while deferring deeper component modeling.
+
+**In scope for v1:**
+
+- **Rookie projections via college / draft-capital comparables** — replaces the v0 behavior where rookies project to ~zero because they have no prior-season stats.
+- **Games-played normalization** — project per-game and multiply by expected games played. Fixes the v0 bug where players who missed time the prior season (e.g., Lamar Jackson at 13 games) are systematically undervalued because their season totals were depressed.
+- **Veterans keep the v0 weekly → season methodology** — sum of weekly fantasy points from the prior season, with season variance derived from `weekly_std × sqrt(games)`. Good enough as a v1 baseline; component-level modeling is deferred.
+
+**Explicitly deferred to v1.5+:**
+
+- Component stat models (per-attempt rates, target shares, etc.)
+- Aging curves
+- Team-context blending for players who changed teams
+- Workload / depth-chart awareness
+- Refined variance modeling beyond `weekly_std × sqrt(games)`
+- Player correlations (these belong to Layer B's sim engine)
+
+**Follow-up:** once v1 ships, update the `_meta.methodology` field in the projections feed from `"v0_prior_season_passthrough"` to `"v1_rookies_and_games_normalized"` (set in `R/publish.R`, function `.projections_to_feed()`).
+
+---
+
 ## Scope
 
 ### In scope
