@@ -1,27 +1,28 @@
-#' Write the projection feed to JSON per FEED_SPEC
+#' Write a slate's projection feed to JSON
 #'
-#' Serializes a projection data frame to `v1/projections/nfl_{season}.json`
-#' under `out_dir`, following the per-player schema in FEED_SPEC.md. The `v1/`
-#' prefix keeps our feed segregated from the legacy Clay `projections/` tree
-#' that lives at the root of bestball-bro-data.
+#' v1 / slate architecture: each slate gets its own file at
+#' `v1/projections/<slate_id>.json` under `out_dir`. The per-player
+#' record carries `underdog_id` (canonical key), `gsis_id` (null for
+#' rookies), our `season.*` projection, derived `vor` /
+#' `position_rank`, plus the slate's `adp` and Underdog's own
+#' `underdog_projected_points` as a reference-only field.
 #'
-#' v0 includes the required fields plus the optional ones we already have
-#' (gsis_id, season percentiles, games_played). Omits weekly / stats /
-#' correlations until those become available in v1+.
-#'
-#' @param projections Data frame from `generate_projections()`.
-#' @param out_dir Output directory (typically a `bestball-bro-data/` sibling).
-#' @param season NFL season for the filename (defaults to current).
-#' @param model_version Feed model version string written into _meta.
+#' @param projections Data frame from [generate_projections()].
+#' @param out_dir Output directory (root of the feed tree, typically a
+#'   `bestball-bro-data/` sibling). The `v1/projections/` subtree is
+#'   created if it does not exist.
+#' @param slate_id Slate ID — used both as the filename and as
+#'   `_meta.slate_id`.
+#' @param slate_meta List with the slate's manifest entry
+#'   (`underdog_slate_id`, `display_name`, `season`, `scoring_id`).
+#' @param model_version Feed model version string written into `_meta`.
 #' @return The full output path, invisibly.
 #' @export
-publish_projections <- function(projections,
-                                out_dir = "../bestball-bro-data",
-                                season = NULL,
-                                model_version = "0.0.1") {
-  season <- season %||% current_season()
-  feed <- .projections_to_feed(projections, season, model_version)
-  out_path <- file.path(out_dir, "v1", "projections", paste0("nfl_", season, ".json"))
+publish_projections <- function(projections, out_dir, slate_id, slate_meta,
+                                model_version = "1.0.0") {
+  feed <- .projections_to_feed(projections, slate_id, slate_meta, model_version)
+  out_path <- file.path(out_dir, "v1", "projections",
+                        paste0(slate_id, ".json"))
   dir.create(dirname(out_path), recursive = TRUE, showWarnings = FALSE)
   jsonlite::write_json(feed, out_path, auto_unbox = TRUE, pretty = TRUE,
                        null = "null", na = "null")
@@ -29,23 +30,25 @@ publish_projections <- function(projections,
   invisible(out_path)
 }
 
-#' Convert a projection data frame to the FEED_SPEC list shape (pure)
+#' Convert a slate projection data frame to the FEED_SPEC list shape (pure)
 #'
 #' Separated for testability — no I/O.
 #'
 #' @keywords internal
-.projections_to_feed <- function(projections, season, model_version = "0.0.1") {
+.projections_to_feed <- function(projections, slate_id, slate_meta,
+                                 model_version = "1.0.0") {
   players <- lapply(seq_len(nrow(projections)), function(i) {
     row <- projections[i, ]
     list(
-      name              = row$name,
-      team              = row$team,
-      position          = row$position,
-      gsis_id           = row$gsis_id,
+      underdog_id = row$underdog_id,
+      gsis_id     = if (is.na(row$gsis_id)) NULL else row$gsis_id,
+      name        = row$name,
+      team        = row$team,
+      position    = row$position,
       season = list(
         mean   = round(row$season_mean, 1),
-        median = round(row$season_p50,  1),
         std    = round(row$season_std,  1),
+        median = round(row$season_p50,  1),
         percentiles = list(
           p10 = round(row$season_p10, 1),
           p25 = round(row$season_p25, 1),
@@ -53,61 +56,61 @@ publish_projections <- function(projections,
           p75 = round(row$season_p75, 1),
           p90 = round(row$season_p90, 1),
           p95 = round(row$season_p95, 1)
-        ),
-        games_played = list(mean = 16, p10 = 13, p50 = 16, p90 = 17)
+        )
       ),
-      vor              = round(row$vor, 1),
-      position_rank    = row$position_rank
+      vor                       = round(row$vor, 1),
+      position_rank             = row$position_rank,
+      adp                       = if (is.na(row$adp)) NULL else row$adp,
+      underdog_projected_points = if (is.na(row$underdog_projected_points)) NULL
+                                  else row$underdog_projected_points
     )
   })
 
   list(
     `_meta` = list(
-      season              = season,
-      scoring             = "half_ppr_underdog",
-      generated_at        = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
-      model_version       = model_version,
-      n_players           = length(players),
-      methodology         = "v0_prior_season_passthrough"
+      slate_id          = slate_id,
+      underdog_slate_id = slate_meta$underdog_slate_id,
+      display_name      = slate_meta$display_name,
+      season            = slate_meta$season,
+      scoring_id        = slate_meta$scoring_id,
+      methodology       = "v1_nflverse_veterans_comparables_rookies",
+      generated_at      = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
+      model_version     = model_version,
+      player_count      = length(players)
     ),
     players = players
   )
 }
 
-#' Write the manifest `_meta.json`
+#' Write the multi-slate manifest `_meta.json`
 #'
-#' Inventories all published files with paths, versions, and sha256 hashes.
-#' The extension fetches this first to detect updates and decide what to fetch.
+#' Inventories every slate this feed publishes. Keyed by `slate_id` so
+#' the extension can look up a slate by its Underdog UUID, fetch the
+#' projections file, and verify content via `sha256`.
 #'
-#' v0 includes only the projections file. Tournament configs / building blocks
-#' get added when their publishers ship.
-#'
-#' @param out_dir Output directory.
-#' @param season NFL season.
-#' @param model_version Feed version string.
+#' @param out_dir Output directory (feed root).
+#' @param slates Named list of slate entries — `names(slates)` are the
+#'   slate IDs; each value is a list with `underdog_slate_id`, `path`
+#'   (relative to feed root), and `version`. `sha256` is computed here
+#'   from the file on disk.
+#' @param season NFL season (carried in the manifest header).
 #' @return Path to the written manifest, invisibly.
 #' @export
-publish_manifest <- function(out_dir = "../bestball-bro-data",
-                             season = NULL,
-                             model_version = "0.0.1") {
-  season <- season %||% current_season()
-
+publish_manifest <- function(out_dir, slates, season) {
   manifest <- list(
-    season       = season,
+    season       = as.integer(season),
     generated_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
-    files        = list(),
-    tournaments  = list(),
-    scoring_systems = list()
+    slates       = list()
   )
-
-  # Add projections file if it exists
-  proj_rel  <- paste0("v1/projections/nfl_", season, ".json")
-  proj_path <- file.path(out_dir, proj_rel)
-  if (file.exists(proj_path)) {
-    manifest$files$projections <- list(
-      path    = proj_rel,
-      version = model_version,
-      sha256  = .file_sha256(proj_path)
+  for (sid in names(slates)) {
+    entry <- slates[[sid]]
+    file_abs <- file.path(out_dir, entry$path)
+    manifest$slates[[sid]] <- list(
+      underdog_slate_id = entry$underdog_slate_id,
+      path              = entry$path,
+      sha256            = if (file.exists(file_abs)) .file_sha256(file_abs)
+                          else "",
+      version           = entry$version
     )
   }
 
@@ -128,7 +131,6 @@ publish_manifest <- function(out_dir = "../bestball-bro-data",
   if (requireNamespace("digest", quietly = TRUE)) {
     return(digest::digest(path, algo = "sha256", file = TRUE))
   }
-  # Fallback for environments without digest installed
   res <- tryCatch(
     system2("sha256sum", args = shQuote(path), stdout = TRUE, stderr = TRUE),
     error = function(e) ""

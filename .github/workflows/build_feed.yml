@@ -53,19 +53,39 @@ jobs:
         # handles this, but creating up front keeps the workflow obvious.)
         run: mkdir -p build/feed/v1/projections
 
-      - name: Generate and publish v0 feed
-        # v0 pipeline: project for the active season, write the projections
-        # JSON, then write the manifest. Season simulations and Layer B
-        # tournament precompute are v1 work and intentionally not invoked
-        # here. season is pinned to the active best ball draft season;
-        # nflreadr's current_season() lags during the offseason and would
-        # otherwise produce nfl_<prior_year>.json. Bump annually.
+      - name: Generate and publish v1 multi-slate feed
+        # v1 pipeline: loop over every enabled slate in
+        # inst/data/slates/_manifest.yaml, project from that slate's
+        # Underdog CSV (canonical player universe), and emit one
+        # v1/projections/<slate_id>.json per slate plus a unified
+        # _meta.json at the feed root. Season simulations and Layer B
+        # tournament precompute are still v1.5+ work.
         run: |
           Rscript -e '
             devtools::load_all()
-            projections <- generate_projections(season = 2026)
-            publish_projections(projections, out_dir = "build/feed", season = 2026)
-            publish_manifest(out_dir = "build/feed", season = 2026)
+            manifest <- load_slate_manifest()
+            enabled  <- Filter(function(e) isTRUE(e$enabled), manifest)
+            if (length(enabled) == 0L) stop("No enabled slates")
+            slates_for_meta <- list()
+            season_for_meta <- NULL
+            model_version <- "1.0.0"
+            for (sid in names(enabled)) {
+              entry <- enabled[[sid]]
+              cat("\n=== Slate:", sid, "===\n")
+              proj <- generate_projections(slate_id = sid)
+              publish_projections(proj, out_dir = "build/feed",
+                                  slate_id = sid, slate_meta = entry,
+                                  model_version = model_version)
+              slates_for_meta[[sid]] <- list(
+                underdog_slate_id = entry$underdog_slate_id,
+                path              = paste0("v1/projections/", sid, ".json"),
+                version           = model_version
+              )
+              if (is.null(season_for_meta)) season_for_meta <- entry$season
+            }
+            publish_manifest(out_dir = "build/feed",
+                             slates = slates_for_meta,
+                             season = season_for_meta)
           '
 
       - name: Stage v1 subtree for deploy

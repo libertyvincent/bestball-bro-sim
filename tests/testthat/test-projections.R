@@ -1,65 +1,6 @@
 # Hermetic tests for .project_v0 — no network, no nflreadr dependency.
-# Builds small fixtures that match the shapes nflreadr would return.
-
-make_test_rosters <- function() {
-  data.frame(
-    full_name = c("Josh Allen", "Bijan Robinson", "CeeDee Lamb",
-                  "Sam LaPorta", "Patrick Mahomes", "Christian McCaffrey",
-                  "Justin Jefferson", "Travis Kelce", "Rookie WR"),
-    gsis_id   = paste0("00-", sprintf("%07d", 1:9)),
-    team      = c("BUF", "ATL", "DAL", "DET", "KC", "SF", "MIN", "KC", "JAX"),
-    position  = c("QB", "RB", "WR", "TE", "QB", "RB", "WR", "TE", "WR"),
-    stringsAsFactors = FALSE
-  )
-}
-
-make_test_historical <- function() {
-  # Weekly fixture — one row per player-game. .project_v0 uses each player's
-  # most recent season (2025). Three regular-season weeks per player-season,
-  # with per-week variation so weekly FP has non-zero spread. Player 1 also
-  # gets a huge playoff (POST) game that must be excluded.
-  # Every player (ids 1-8) has prior data; roster id 9 (Rookie WR) has none.
-  base <- list(
-    "00-0000001" = list(pos = "QB", py = 270, pt = 2, int = 1, ry = 28, rt = 0, rec = 0, recy = 0,  rect = 0),
-    "00-0000005" = list(pos = "QB", py = 300, pt = 2, int = 1, ry = 22, rt = 0, rec = 0, recy = 0,  rect = 0),
-    "00-0000002" = list(pos = "RB", py = 0,   pt = 0, int = 0, ry = 95, rt = 1, rec = 4, recy = 32, rect = 0),
-    "00-0000006" = list(pos = "RB", py = 0,   pt = 0, int = 0, ry = 80, rt = 1, rec = 3, recy = 24, rect = 0),
-    "00-0000003" = list(pos = "WR", py = 0,   pt = 0, int = 0, ry = 0,  rt = 0, rec = 7, recy = 95, rect = 1),
-    "00-0000007" = list(pos = "WR", py = 0,   pt = 0, int = 0, ry = 0,  rt = 0, rec = 6, recy = 78, rect = 0),
-    "00-0000004" = list(pos = "TE", py = 0,   pt = 0, int = 0, ry = 0,  rt = 0, rec = 5, recy = 55, rect = 0),
-    "00-0000008" = list(pos = "TE", py = 0,   pt = 0, int = 0, ry = 0,  rt = 0, rec = 4, recy = 40, rect = 0)
-  )
-  week_mult   <- c(0.7, 1.0, 1.3)               # within-season weekly variation
-  season_mult <- c("2024" = 0.85, "2025" = 1.0) # 2025 is the recent season
-
-  rows <- list()
-  for (pid in names(base)) {
-    b <- base[[pid]]
-    for (s in c(2024, 2025)) for (w in seq_along(week_mult)) {
-      mlt <- season_mult[[as.character(s)]] * week_mult[w]
-      rows[[length(rows) + 1L]] <- data.frame(
-        player_id = pid, position = b$pos, season = s, week = w,
-        season_type = "REG",
-        passing_yards   = b$py   * mlt, passing_tds     = b$pt   * mlt,
-        interceptions   = b$int  * mlt,
-        rushing_yards   = b$ry   * mlt, rushing_tds     = b$rt   * mlt,
-        receptions      = b$rec  * mlt, receiving_yards = b$recy * mlt,
-        receiving_tds   = b$rect * mlt,
-        stringsAsFactors = FALSE
-      )
-    }
-  }
-  # Playoff game for player 1 — must be excluded by .project_v0.
-  rows[[length(rows) + 1L]] <- data.frame(
-    player_id = "00-0000001", position = "QB", season = 2025, week = 19L,
-    season_type = "POST",
-    passing_yards = 999, passing_tds = 9, interceptions = 0,
-    rushing_yards = 99, rushing_tds = 9,
-    receptions = 0, receiving_yards = 0, receiving_tds = 0,
-    stringsAsFactors = FALSE
-  )
-  do.call(rbind, rows)
-}
+# Shared fixtures (make_test_rosters / make_test_historical) live in
+# helper-fixtures.R so other test files can reuse them.
 
 test_that(".project_v0 runs end-to-end on mock data and returns expected columns", {
   out <- .project_v0(make_test_rosters(), make_test_historical(),
@@ -132,7 +73,10 @@ test_that(".project_v0 falls back to position median for players with no prior d
   out <- .project_v0(rosters, hist, scoring)
 
   # Rookie WR (00-0000009) has no prior stats. Expected season_mean = median
-  # of the season means of the WRs that DO have prior data.
+  # of the season means of the WRs that DO have prior data. (Note: in the
+  # v1 slate flow, rookies never reach .project_v0 — they go through
+  # project_rookies — but the legacy fallback is preserved for direct
+  # callers and exercised here.)
   wr_with_data <- out$season_mean[out$position == "WR" &
                                     out$gsis_id != "00-0000009"]
   rookie       <- out[out$gsis_id == "00-0000009", ]
@@ -163,17 +107,4 @@ test_that(".project_v0 produces sensible percentiles (p10 < p50 < p90)", {
   expect_true(all(out$season_p10 < out$season_p50))
   expect_true(all(out$season_p50 < out$season_p90))
   expect_true(all(out$season_p25 < out$season_p75))
-})
-
-test_that(".project_v0 output round-trips through publish without error", {
-  out <- .project_v0(make_test_rosters(), make_test_historical(),
-                     load_scoring_config("half_ppr_underdog"))
-
-  tmp <- tempfile(); dir.create(tmp); on.exit(unlink(tmp, recursive = TRUE))
-  out_path <- publish_projections(out, out_dir = tmp, season = 2026)
-  expect_true(file.exists(out_path))
-
-  parsed <- jsonlite::fromJSON(out_path, simplifyVector = FALSE)
-  expect_length(parsed$players, 9)
-  expect_true(all(c("_meta", "players") %in% names(parsed)))
 })

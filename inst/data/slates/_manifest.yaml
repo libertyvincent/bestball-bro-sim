@@ -1,0 +1,29 @@
+slates:
+  nfl_2026_season:
+    underdog_slate_id: a9c04e81-1ace-4b16-a31d-4c725a47f16f
+    display_name: NFL 2026 Season
+    season: 2026
+    scoring_id: half_ppr_underdog
+    csv_file: nfl_2026_season.csv
+    enabled: true
+  nfl_2026_eliminator:
+    underdog_slate_id: null
+    display_name: NFL 2026 Eliminator Season
+    season: 2026
+    scoring_id: half_ppr_underdog
+    csv_file: nfl_2026_eliminator.csv
+    enabled: false
+  nfl_2026_weekly_winners:
+    underdog_slate_id: null
+    display_name: NFL 2026 Weekly Winners Season
+    season: 2026
+    scoring_id: half_ppr_underdog
+    csv_file: nfl_2026_weekly_winners.csv
+    enabled: false
+  nfl_2026_superflex:
+    underdog_slate_id: null
+    display_name: NFL 2026 Superflex Season
+    season: 2026
+    scoring_id: half_ppr_underdog
+    csv_file: nfl_2026_superflex.csv
+    enabled: false

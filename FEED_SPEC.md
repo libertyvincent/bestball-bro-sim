@@ -16,13 +16,16 @@ The feed is a directory tree at the GitHub Pages root. Files are versioned by se
 
 ```
 bestball-bro-data/
-├── _meta.json                              # Manifest — discovered first, drives everything else
+├── _meta.json                              # Multi-slate manifest — discovered first, drives everything else
 └── v1/
     ├── tournaments_index.json              # Underdog contest title → tournament_id mapping
     ├── projections/
-    │   └── nfl_2026.json                   # Layer A — per-player projections (shared across tournaments)
+    │   ├── nfl_2026_season.json            # Layer A — one file per Underdog slate (slate CSV is canonical universe)
+    │   ├── nfl_2026_eliminator.json        # (added when the Eliminator slate is enabled in inst/data/slates/_manifest.yaml)
+    │   ├── nfl_2026_weekly_winners.json
+    │   └── nfl_2026_superflex.json
     ├── sim_draws/
-    │   └── nfl_2026.parquet                # Layer A full sim draws (optional consumer)
+    │   └── nfl_2026.parquet                # Layer A full sim draws (optional consumer; cross-slate for now)
     ├── tournaments/
     │   ├── bbm_2026.json                   # BBM stage config
     │   ├── bbm_superflex_2026.json
@@ -67,81 +70,73 @@ Compatibility:
 | 1.x.y       | 1.x.z           | Compatible |
 | 1.x.y       | 2.x.z           | Incompatible — extension warns, falls back to projections-only mode |
 
-`_meta.json` at root is the manifest:
+`_meta.json` at root is the multi-slate manifest:
 
 ```jsonc
 {
   "season": 2026,
   "generated_at": "2026-08-15T03:00:00Z",
-  "files": {
-    "projections":       { "path": "v1/projections/nfl_2026.json",    "version": "0.3.0", "sha256": "..." },
-    "sim_draws":         { "path": "v1/sim_draws/nfl_2026.parquet",   "version": "0.3.0", "sha256": "..." },
-    "tournaments_index": { "path": "v1/tournaments_index.json",       "version": "1.0.0", "sha256": "..." },
-    "teams":             { "path": "v1/teams/nfl_2026.json",          "version": "1.0.0", "sha256": "..." }
-  },
-  "tournaments": {
-    "bbm_2026":            { "config": "v1/tournaments/bbm_2026.json",            "building_blocks": "v1/building_blocks/bbm_2026.json",            "version": "0.3.0", "sha256": "..." },
-    "bbm_superflex_2026":  { "config": "v1/tournaments/bbm_superflex_2026.json",  "building_blocks": "v1/building_blocks/bbm_superflex_2026.json",  "version": "0.3.0", "sha256": "..." },
-    "big_board_2026":      { "config": "v1/tournaments/big_board_2026.json",      "building_blocks": "v1/building_blocks/big_board_2026.json",      "version": "0.3.0", "sha256": "..." },
-    "puppy_2026":          { "config": "v1/tournaments/puppy_2026.json",          "building_blocks": "v1/building_blocks/puppy_2026.json",          "version": "0.3.0", "sha256": "..." },
-    "weekly_winners_2026": { "config": "v1/tournaments/weekly_winners_2026.json", "building_blocks": "v1/building_blocks/weekly_winners_2026.json", "version": "0.3.0", "sha256": "..." }
-  },
-  "scoring_systems": {
-    "half_ppr_underdog":   { "path": "v1/scoring/half_ppr_underdog.json", "version": "1.0.0", "sha256": "..." }
+  "slates": {
+    "nfl_2026_season": {
+      "underdog_slate_id": "a9c04e81-1ace-4b16-a31d-4c725a47f16f",
+      "path":              "v1/projections/nfl_2026_season.json",
+      "version":           "1.0.0",
+      "sha256":            "..."
+    }
+    // future slates (nfl_2026_eliminator, nfl_2026_weekly_winners,
+    // nfl_2026_superflex) appear here once enabled in
+    // inst/data/slates/_manifest.yaml.
   }
 }
 ```
 
-The `tournaments` map is open-ended — adding a new tournament means adding an entry here plus publishing the two referenced files (`config` and `building_blocks`).
+The `slates` map is open-ended — adding a new slate means dropping its CSV in `inst/data/slates/`, flipping `enabled: true` in the manifest YAML, and the next build produces a new entry here automatically.
+
+Tournament configs and building-blocks files (Layer B output) are not represented in the current `_meta.json` schema — they re-enter when Layer B precompute ships.
 
 ---
 
-## Projections schema (`v1/projections/nfl_2026.json`)
+## Projections schema (`v1/projections/<slate_id>.json`)
+
+One file per Underdog slate. `_meta` carries the slate identity; every
+row in `players` is a row in the slate's Underdog CSV, projected by our
+methodology — veterans via the nflverse weekly→season pipeline, rookies
+via historical-draft-capital comparables. `underdog_projected_points`
+is preserved as a reference / traceability field; it does NOT feed our
+`season.mean`, `season.std`, `vor`, or anything else we compute.
 
 ```jsonc
 {
   "_meta": {
-    "season": 2026,
-    "scoring": "half_ppr_underdog",
-    "generated_at": "2026-08-15T03:00:00Z",
-    "n_sims": 10000,
-    "model_version": "0.3.0",
-    "data_through_date": "2026-08-14",
-    "user_adjustments_version": "2026-08-14a"
+    "slate_id":          "nfl_2026_season",
+    "underdog_slate_id": "a9c04e81-1ace-4b16-a31d-4c725a47f16f",
+    "display_name":      "NFL 2026 Season",
+    "season":            2026,
+    "scoring_id":        "half_ppr_underdog",
+    "methodology":       "v1_nflverse_veterans_comparables_rookies",
+    "generated_at":      "2026-08-15T03:00:00Z",
+    "model_version":     "1.0.0",
+    "player_count":      1449
   },
   "players": [
     {
-      "name": "Bijan Robinson",
-      "team": "ATL",
-      "position": "RB",
-      "gsis_id": "00-0037077",
-      "underdog_player_id": "2b0cbe83-48a2-41b0-b03f-42180cfc4b77",
+      "underdog_id": "25cbfc55-cb8a-4589-85de-e91870f65952",
+      "gsis_id":     "00-0037077",
+      "name":        "Bijan Robinson",
+      "team":        "ATL",
+      "position":    "RB",
       "season": {
-        "mean": 287.4, "median": 281.2, "std": 58.3,
-        "percentiles": { "p10": 215.0, "p25": 248.5, "p50": 281.2, "p75": 322.1, "p90": 363.8, "p95": 388.5 },
-        "games_played": { "mean": 15.8, "p10": 13, "p50": 16, "p90": 17 }
+        "mean":   285.4,
+        "std":    62.5,
+        "median": 285.4,
+        "percentiles": { "p10": 205.3, "p25": 243.1, "p50": 285.4, "p75": 327.7, "p90": 365.5, "p95": 387.9 }
       },
-      "weekly": [
-        { "week": 1, "mean": 17.5, "std": 8.2, "p90": 32.0, "p10": 4.5 }
-        // ... weeks 2-17
-      ],
-      "stats": {
-        "rush_att":   { "mean": 245,  "std": 35  },
-        "rush_yards": { "mean": 1180, "std": 250 },
-        "rush_tds":   { "mean": 11,   "std": 4   },
-        "targets":    { "mean": 85,   "std": 18  },
-        "rec":        { "mean": 65,   "std": 14  },
-        "rec_yards":  { "mean": 520,  "std": 130 },
-        "rec_tds":    { "mean": 3,    "std": 1.8 }
-      },
-      "correlations": [
-        { "with_underdog_id": "...uuid...", "rho":  0.42, "type": "same_team_qb_rb" },
-        { "with_underdog_id": "...uuid...", "rho": -0.15, "type": "same_team_rb_rb" }
-      ],
-      "vor": 84.2,
-      "position_rank": "RB1"
+      "vor":                       84.2,
+      "position_rank":             "RB1",
+      "adp":                       1.5,
+      "underdog_projected_points": 294.9
     }
-    // ... ~300 players
+    // ... player_count entries (~1449 for the Season slate)
   ]
 }
 ```
@@ -149,19 +144,18 @@ The `tournaments` map is open-ended — adding a new tournament means adding an 
 ### Required vs optional fields
 
 **Required (extension parses these every load):**
-- `name`, `team`, `position`, `underdog_player_id`
+- `underdog_id` — canonical primary key
+- `name`, `team`, `position`
 - `season.mean`, `season.std`
 - `position_rank`, `vor`
 
 **Optional (used by richer recommendation logic; absent = feature degrades gracefully):**
-- `gsis_id` — falls back to name-based matching
-- `season.percentiles` — falls back to assuming normal distribution
-- `weekly` — falls back to season/17 with position-specific weekly variance
-- `stats` — purely informational, not used by current B-side
-- `correlations` — falls back to zero correlations (loses stack EV)
-- `season.games_played` — falls back to 17 expected
+- `gsis_id` — present for veterans; **null for rookies** (no historical-stats match available). Extension can fall back to name-based joins.
+- `season.percentiles` — full empirical / parametric distribution; falls back to Normal(mean, std) if absent.
+- `adp` — taken from the slate CSV; null for free-agent rows Underdog hasn't priced yet.
+- `underdog_projected_points` — Underdog's own projection for the slate, kept as a reference field for sanity comparison and divergence reporting. **Do NOT feed this back into ranking** — it is not our methodology and treating it as such would silently overwrite our projection.
 
-This gradual-degradation pattern lets the feed evolve. Adding new fields never breaks the extension.
+The slate CSV is the canonical player universe — every UUID in the CSV gets a row in the feed, in the order yielded by our VOR sort.
 
 ### Correlation representation
 
@@ -183,7 +177,7 @@ Schema:
 
 | Column | Type | Notes |
 |--------|------|-------|
-| `underdog_player_id` | string | join key |
+| `underdog_id` | string | join key |
 | `sim_id` | int | 0 .. n_sims-1 |
 | `season_points` | float | half-PPR season total |
 | `games_played` | int | |
@@ -239,7 +233,7 @@ Layer B's offline pre-computed outputs:
     // ... ~50 constructions (12 slots × ~4 archetypes each)
   ],
   "marginal_contributions": {
-    // Keyed by (underdog_player_id, construction_id, pick_number)
+    // Keyed by (underdog_id, construction_id, pick_number)
     // For each cell: marginal advance probability of adding this player
     //                to this construction at this pick number
     "2b0cbe83-48a2-...": {
@@ -308,17 +302,17 @@ Verified against the extension's `scoring_type_id` mapping at runtime. Mismatch 
 
 ## Joining to Underdog appearances
 
-The extension's existing `BBBRO_MATCH` module joins feed records to Underdog appearance records. Today the join is `name|TEAM|pos` with `OVERRIDES` for known mismatches. With the new feed, we gain `underdog_player_id` as a direct join key.
+The extension's existing `BBBRO_MATCH` module joins feed records to Underdog appearance records. Today the join is `name|TEAM|pos` with `OVERRIDES` for known mismatches. With the new feed, we gain `underdog_id` as a direct join key.
 
 **New join order in `matchPlayer.js`:**
 
-1. **Primary:** `appearance.player_id === player.underdog_player_id` — direct UUID match, perfect when both sides have it.
-2. **Secondary:** `name|TEAM|pos` — current Phase 8 logic, used when `underdog_player_id` is missing from the feed (early-season rookies, mid-season trades the feed hasn't picked up yet).
+1. **Primary:** `appearance.player_id === player.underdog_id` — direct UUID match, perfect when both sides have it.
+2. **Secondary:** `name|TEAM|pos` — current Phase 8 logic, used when `underdog_id` is missing from the feed (early-season rookies, mid-season trades the feed hasn't picked up yet).
 3. **Tertiary:** name-only + position uniqueness — current fallback.
 4. **Quaternary:** lastname + position + team disambiguation — current fallback.
 5. **OVERRIDES table** — true name-spelling mismatches (Hollywood/Marquise, etc.).
 
-`underdog_player_id` becoming the primary key eliminates ~80% of the OVERRIDES entries over time. We keep the existing fallback chain because Underdog occasionally assigns new UUIDs (re-signed players, rookies pre-rookie-camp, etc.) and the feed might lag.
+`underdog_id` becoming the primary key eliminates ~80% of the OVERRIDES entries over time. We keep the existing fallback chain because Underdog occasionally assigns new UUIDs (re-signed players, rookies pre-rookie-camp, etc.) and the feed might lag.
 
 ---
 

@@ -1,43 +1,48 @@
 devtools::load_all(".")
 
-# --- Choose season: 2026 if rosters exist, else fall back to 2025 ----------
-season <- 2026
-tryCatch({
-  rosters_check <- nflreadr::load_rosters(season)
-  if (nrow(rosters_check) == 0) {
-    season <- 2025
-    cat("2026 rosters empty, falling back to 2025\n")
-  }
-}, error = function(e) {
-  season <<- 2025
-  cat("2026 rosters not available, falling back to 2025\n")
-})
-cat("Generating projections for season:", season, "\n")
-
-projections <- generate_projections(season = season)
-
-# --- Publish in the v1/ versioned layout -----------------------------------
-# Target:  real_v0_feed/_meta.json                       (manifest, at root)
-#          real_v0_feed/v1/projections/nfl_<season>.json  (projections)
+# v1 / slate architecture: loop over every slate marked enabled in the
+# manifest, project it, publish it, then write a single multi-slate
+# _meta.json at the feed root.
 #
-# publish_projections()/publish_manifest() take a directory and build the
-# `projections/...` + `_meta.json` paths themselves; they don't know about the
-# v1/ version dir. So we point them at real_v0_feed/v1, then relocate _meta.json
-# up to the feed root and rewrite the projections path to be root-relative.
+# Target layout:
+#   real_v0_feed/_meta.json                          (multi-slate manifest)
+#   real_v0_feed/v1/projections/<slate_id>.json      (one per enabled slate)
+
 out_dir <- "C:/Users/vince/Desktop/real_v0_feed"
-v1_dir  <- file.path(out_dir, "v1")
-dir.create(v1_dir, showWarnings = FALSE, recursive = TRUE)
+dir.create(out_dir, showWarnings = FALSE, recursive = TRUE)
 
-proj_path <- publish_projections(projections, out_dir = v1_dir, season = season)
+manifest <- load_slate_manifest()
+enabled  <- Filter(function(e) isTRUE(e$enabled), manifest)
+if (length(enabled) == 0L) {
+  stop("No enabled slates in inst/data/slates/_manifest.yaml")
+}
 
-publish_manifest(v1_dir, season = season)
-manifest <- jsonlite::read_json(file.path(v1_dir, "_meta.json"))
-manifest$files$projections$path <- paste0("v1/", manifest$files$projections$path)
-jsonlite::write_json(manifest, file.path(out_dir, "_meta.json"),
-                     auto_unbox = TRUE, pretty = TRUE, null = "null", na = "null")
-file.remove(file.path(v1_dir, "_meta.json"))
+model_version <- "1.0.0"
+season_for_meta <- NULL
+slates_for_meta <- list()
 
-cat("Done. Files written to:", out_dir, "\n")
+for (slate_id in names(enabled)) {
+  entry <- enabled[[slate_id]]
+  cat("\n=== Slate:", slate_id, "===\n")
+
+  proj <- generate_projections(slate_id = slate_id)
+  publish_projections(proj, out_dir = out_dir, slate_id = slate_id,
+                      slate_meta = entry, model_version = model_version)
+
+  slates_for_meta[[slate_id]] <- list(
+    underdog_slate_id = entry$underdog_slate_id,
+    path              = paste0("v1/projections/", slate_id, ".json"),
+    version           = model_version
+  )
+  if (is.null(season_for_meta)) season_for_meta <- entry$season
+  cat("  Player count:", nrow(proj), "\n")
+}
+
+publish_manifest(out_dir = out_dir, slates = slates_for_meta,
+                 season = season_for_meta)
+cat("\nDone. Files written to:", out_dir, "\n")
 cat("  manifest    :", file.path(out_dir, "_meta.json"), "\n")
-cat("  projections :", proj_path, "\n")
-cat("Player count :", nrow(projections), "\n")
+for (sid in names(slates_for_meta)) {
+  cat("  projections :",
+      file.path(out_dir, slates_for_meta[[sid]]$path), "\n")
+}
