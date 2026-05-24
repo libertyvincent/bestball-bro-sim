@@ -18,8 +18,9 @@ The feed is a directory tree at the GitHub Pages root. Files are versioned by se
 bestball-bro-data/
 ├── _meta.json                          # Manifest — discovered first, drives everything else
 ├── tournaments_index.json              # Underdog contest title → tournament_id mapping
-├── projections/
-│   └── nfl_2026.json                   # Layer A — per-player projections (shared across tournaments)
+├── v1/
+│   └── projections/
+│       └── nfl_2026.json               # Layer A — per-player projections (shared across tournaments)
 ├── sim_draws/
 │   └── nfl_2026.parquet                # Layer A full sim draws (optional consumer)
 ├── tournaments/
@@ -73,7 +74,7 @@ Compatibility:
   "season": 2026,
   "generated_at": "2026-08-15T03:00:00Z",
   "files": {
-    "projections":       { "path": "projections/nfl_2026.json",       "version": "0.3.0", "sha256": "..." },
+    "projections":       { "path": "v1/projections/nfl_2026.json",    "version": "0.3.0", "sha256": "..." },
     "sim_draws":         { "path": "sim_draws/nfl_2026.parquet",      "version": "0.3.0", "sha256": "..." },
     "tournaments_index": { "path": "tournaments_index.json",          "version": "1.0.0", "sha256": "..." },
     "teams":             { "path": "teams/nfl_2026.json",             "version": "1.0.0", "sha256": "..." }
@@ -95,7 +96,7 @@ The `tournaments` map is open-ended — adding a new tournament means adding an 
 
 ---
 
-## Projections schema (`projections/nfl_2026.json`)
+## Projections schema (`v1/projections/nfl_2026.json`)
 
 ```jsonc
 {
