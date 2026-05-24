@@ -34,7 +34,6 @@ jobs:
           packages: |
             any::nflreadr
             any::nflfastR
-            any::ffanalytics
             any::jsonlite
             any::yaml
             any::dplyr
