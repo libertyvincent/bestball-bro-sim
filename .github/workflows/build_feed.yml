@@ -48,56 +48,24 @@ jobs:
         run: Rscript -e 'devtools::load_all(); invisible(lapply(list_tournaments(), load_tournament_config))'
 
       - name: Create build directories
-        # saveRDS / arrow::write_parquet do not auto-create parents; this also
-        # primes the feed tree so the publish_* functions write into an
-        # existing path.
+        # Primes the feed tree so publish_* writes into an existing path.
+        # (dir.create(recursive = TRUE) inside the publish functions also
+        # handles this, but creating up front keeps the workflow obvious.)
         run: mkdir -p build/feed/v1/projections
 
-      - name: Build Layer A projections
-        # season is pinned to the active best ball draft season. nflreadr's
-        # current_season() lags behind during the offseason, so an explicit
-        # value avoids accidentally projecting the prior year. Bump this every
-        # year once the new season opens.
+      - name: Generate and publish v0 feed
+        # v0 pipeline: project for the active season, write the projections
+        # JSON, then write the manifest. Season simulations and Layer B
+        # tournament precompute are v1 work and intentionally not invoked
+        # here. season is pinned to the active best ball draft season;
+        # nflreadr's current_season() lags during the offseason and would
+        # otherwise produce nfl_<prior_year>.json. Bump annually.
         run: |
           Rscript -e '
             devtools::load_all()
             projections <- generate_projections(season = 2026)
-            saveRDS(projections, "build/projections.rds")
-          '
-
-      - name: Run season simulations
-        run: |
-          Rscript -e '
-            devtools::load_all()
-            projections <- readRDS("build/projections.rds")
-            draws <- run_season_sims(projections)
-            arrow::write_parquet(draws, "build/sim_draws.parquet")
-          '
-
-      - name: Pre-compute Layer B building blocks per tournament
-        run: |
-          Rscript -e '
-            devtools::load_all()
-            projections <- readRDS("build/projections.rds")
-            draws <- arrow::read_parquet("build/sim_draws.parquet")
-            for (tid in list_tournaments()) {
-              cli::cli_alert_info("Precomputing for {tid}")
-              cfg <- load_tournament_config(tid)
-              bb <- precompute_building_blocks(cfg, projections, draws)
-              publish_building_blocks(tid, bb, out_dir = "build/feed")
-            }
-          '
-
-      - name: Write feed artifacts
-        run: |
-          Rscript -e '
-            devtools::load_all()
-            projections <- readRDS("build/projections.rds")
-            draws <- arrow::read_parquet("build/sim_draws.parquet")
-            publish_projections(projections, out_dir = "build/feed")
-            publish_sim_draws(draws, out_dir = "build/feed")
-            publish_tournaments_index(out_dir = "build/feed")
-            publish_manifest(out_dir = "build/feed")
+            publish_projections(projections, out_dir = "build/feed", season = 2026)
+            publish_manifest(out_dir = "build/feed", season = 2026)
           '
 
       - name: Stage v1 subtree for deploy
