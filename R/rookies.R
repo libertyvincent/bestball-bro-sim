@@ -113,23 +113,36 @@
 #' Project slate rookies via historical-draft-capital comparables
 #'
 #' Layer A v1 module — slate-aware. For each rookie row in `rookies_df`,
-#' looks up their draft round in `drafts_df` (by normalized name +
-#' nflverse team abbreviation + position), bins by `(position,
-#' draft_capital)`, and projects from the empirical distribution of
-#' historical comparables' rookie-year season totals.
+#' looks up their actual draft round in `drafts_df` (by normalized name
+#' + nflverse team abbreviation + position) and projects from the
+#' empirical distribution of historical comparables' rookie-year season
+#' totals at the same round.
 #'
-#' Bins: `"1st"`, `"2nd-3rd"`, `"4th-5th"`, `"6th-7th"`, `"UDFA"`.
-#' If a `(position, bin)` cell has fewer than 10 historical comparables
-#' it falls back to a position-only sample and emits a single batched
-#' warning listing the bins that fell back.
+#' **Sample selection — 3-tier expansion with a 5-sample floor.** A
+#' `(position, round-set)` cell with fewer than 5 historical comparables
+#' is widened. The tiers prefer stronger draft capital and only include
+#' weaker rounds when stronger ones can't supply the floor:
+#'
+#' | target  | tier 1     | tier 2          | tier 3           |
+#' |---------|------------|-----------------|------------------|
+#' | round 1 | round 1    | rounds 1-2      | rounds 1-3       |
+#' | round 2-3 | rounds 2-3 | rounds 1-3    | rounds 1-3       |
+#' | round 4-5 | rounds 4-5 | rounds 2-5    | rounds 1-5       |
+#' | round 6-7 | rounds 6-7 | rounds 4-7    | rounds 1-7       |
+#' | UDFA    | (none)     | round 7         | rounds 1-7       |
+#'
+#' This replaces the v1 prototype's "exact bin → position-only" fallback,
+#' which dragged 1st-round projections way down by pooling them with
+#' rounds 6-7 and UDFAs whenever the 1st-round bin was thin (a frequent
+#' nflverse data-quality issue — historical `load_draft_picks()` has
+#' missing `gsis_id`s on some 1st-rounders).
 #'
 #' Drafted comparables who never logged a regular-season game in their
 #' rookie year (cut, IR all season, practice squad) are included with
-#' `season_total = 0` — honest signal about the bin's NFL stickiness.
+#' `season_total = 0` — honest signal about the round's NFL stickiness.
 #'
-#' Current-year UDFAs always trigger the position-only fallback (the
-#' comparable table only contains drafted players). Acceptable for v1;
-#' revisit in v1.5+ if UDFA projections look materially off.
+#' Current-year UDFAs always trigger tier 2+ (the comparable table only
+#' contains drafted players, so tier 1 is empty by construction).
 #'
 #' @param rookies_df Slate rookies (one row each). Required columns:
 #'   `underdog_id`, `full_name`, `team_abbr`, `position`. Caller filters
@@ -182,16 +195,22 @@ project_rookies <- function(rookies_df, drafts_df, historical_stats_df,
       if (length(hit) > 0L) round <- as.integer(current_draft$round[hit[1]])
     }
 
-    bin <- .draft_capital_bin(round)
+    tiers <- .rookie_round_tiers(round)
+    pos_pool <- comp[comp$position == r$position, , drop = FALSE]
+    samples   <- pos_pool$season_total[pos_pool$round %in% tiers[[1]]]
+    tier_used <- 1L
+    for (t in 2:3) {
+      if (length(samples) >= 5L) break
+      samples   <- pos_pool$season_total[pos_pool$round %in% tiers[[t]]]
+      tier_used <- t
+    }
 
-    samples <- comp$season_total[comp$position == r$position &
-                                   comp$bin == bin]
-    if (length(samples) < 10L) {
-      combo <- paste0(r$position, "/", bin)
+    if (tier_used > 1L) {
+      combo <- paste0(r$position, "/", .draft_capital_bin(round),
+                      " (tier ", tier_used, ")")
       if (!(combo %in% fallback_seen)) {
         fallback_seen <- c(fallback_seen, combo)
       }
-      samples <- comp$season_total[comp$position == r$position]
     }
 
     stats_row <- .rookie_row_stats(samples)
@@ -209,12 +228,34 @@ project_rookies <- function(rookies_df, drafts_df, historical_stats_df,
 
   if (length(fallback_seen) > 0L) {
     cli::cli_warn(c(
-      "Rookie comparable bin(s) below 10-sample floor; used position-only fallback:",
+      "Rookie comparable bin(s) below 5-sample floor; widened to a stronger-capital tier:",
       i = "{paste(fallback_seen, collapse = ', ')}"
     ))
   }
 
   do.call(rbind, out_rows)
+}
+
+#' Round-set tiers for rookie comparable sampling
+#'
+#' Returns a length-3 list of integer vectors — tier 1 is the narrowest
+#' (exact bin), tier 3 is the broadest fallback. The widening prefers
+#' stronger draft capital: a 1st-rounder's tier 3 stops at rounds 1-3
+#' (never pools with 4th+), while a 6th-7th-rounder's tier 3 pulls in
+#' all drafted picks. UDFA has an empty tier 1 (the comparable table
+#' contains no UDFAs).
+#'
+#' @keywords internal
+.rookie_round_tiers <- function(round) {
+  if (length(round) == 0L || is.na(round)) {
+    return(list(integer(0), 7L, 1:7))
+  }
+  r <- as.integer(round)
+  if (r == 1L)            list(1L,   1:2,  1:3)
+  else if (r %in% 2:3)    list(2:3,  1:3,  1:3)
+  else if (r %in% 4:5)    list(4:5,  2:5,  1:5)
+  else if (r %in% 6:7)    list(6:7,  4:7,  1:7)
+  else                    list(integer(0), 7L, 1:7)
 }
 
 #' Build the rookie comparables table
@@ -262,6 +303,7 @@ project_rookies <- function(rookies_df, drafts_df, historical_stats_df,
   data.frame(
     gsis_id      = joined$gsis_id,
     position     = joined$position,
+    round        = as.integer(joined$round),
     bin          = joined$bin,
     season_total = joined$season_total,
     stringsAsFactors = FALSE
@@ -337,7 +379,7 @@ project_rookies <- function(rookies_df, drafts_df, historical_stats_df,
 .empty_comp_df <- function() {
   data.frame(
     gsis_id = character(0), position = character(0),
-    bin = character(0), season_total = numeric(0),
+    round = integer(0), bin = character(0), season_total = numeric(0),
     stringsAsFactors = FALSE
   )
 }

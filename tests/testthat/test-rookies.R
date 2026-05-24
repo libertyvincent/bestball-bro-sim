@@ -159,7 +159,7 @@ test_that("1st-round WR rookie projects to the empirical median of WR comparable
   expect_true(out$season_p50 < out$season_p90)
 })
 
-test_that("undersized bin warns and falls back to position-only comparables", {
+test_that("undersized 1st-round bin widens to stronger-capital tiers, never to weaker", {
   rookies <- make_rookie_slate()[3, , drop = FALSE]  # 1st-round RB
   drafts  <- make_draft_fixture()
   hist    <- make_rookie_historical_stats()
@@ -167,12 +167,24 @@ test_that("undersized bin warns and falls back to position-only comparables", {
 
   expect_warning(
     out <- project_rookies(rookies, drafts, hist, scoring, season = 2026),
-    "below 10-sample floor"
+    "below 5-sample floor"
   )
 
-  # Position-only fallback for RB pools the 2 played 1st-rounders +
-  # 10 played 4th-rounders = 12 totals. Median should be > 0.
-  expect_gt(out$season_mean, 0)
+  # For a 1st-rounder the tiers are rounds {1}, {1,2}, {1,2,3} — the
+  # 10 4th-round RB samples in the fixture must NOT enter the pool
+  # (that's the regression: the old position-only fallback diluted
+  # 1st-round projections by including the 4th+ rounders, dragging
+  # real-NFL elite-rookie projections way down). The fixture has 3
+  # historical 1st-round RBs (00-H000021..23, with H023 logging zero
+  # stats); the projection's `season_mean` must equal the median of
+  # those three (25.5), proving we never widened past round 3.
+  hist$fp <- compute_fantasy_points(hist, scoring)
+  first_round_pids   <- paste0("00-H", sprintf("%06d", c(21, 22)))
+  first_round_totals <- c(vapply(first_round_pids,
+                                 function(p) sum(hist$fp[hist$player_id == p]),
+                                 numeric(1)),
+                          0)  # H000023 — drafted, never played
+  expect_equal(out$season_mean, stats::median(first_round_totals))
 })
 
 test_that("UDFA rookies (no current-year draft entry) fall back via UDFA bin", {
@@ -203,6 +215,19 @@ test_that("a drafted comparable who never played enters the bin with zero", {
   expect_equal(nrow(rb_first), 3)
   expect_true(any(rb_first$season_total == 0))
   expect_true("00-H000023" %in% rb_first$gsis_id)
+})
+
+# ---- .rookie_round_tiers unit tests ----
+
+test_that(".rookie_round_tiers produces the spec'd 3-tier expansion", {
+  expect_equal(.rookie_round_tiers(1L),           list(1L,         1:2, 1:3))
+  expect_equal(.rookie_round_tiers(2L),           list(2:3,        1:3, 1:3))
+  expect_equal(.rookie_round_tiers(3L),           list(2:3,        1:3, 1:3))
+  expect_equal(.rookie_round_tiers(4L),           list(4:5,        2:5, 1:5))
+  expect_equal(.rookie_round_tiers(5L),           list(4:5,        2:5, 1:5))
+  expect_equal(.rookie_round_tiers(6L),           list(6:7,        4:7, 1:7))
+  expect_equal(.rookie_round_tiers(7L),           list(6:7,        4:7, 1:7))
+  expect_equal(.rookie_round_tiers(NA_integer_),  list(integer(0), 7L,  1:7))
 })
 
 # ---- .draft_capital_bin unit tests ----
