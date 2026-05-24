@@ -91,11 +91,22 @@ jobs:
             publish_manifest(out_dir = "build/feed")
           '
 
+      - name: Stage v1 subtree for deploy
+        # Deploy only the v1/ namespace + _meta.json. The root projections/
+        # directory in bestball-bro-data belongs to Clay's legacy feed and
+        # must not be touched by this workflow. keep_files: true (below)
+        # preserves any path we do not stage here.
+        run: |
+          mkdir -p build/deploy
+          cp -r build/feed/v1 build/deploy/
+          cp build/feed/_meta.json build/deploy/
+
       - name: Publish to bestball-bro-data
         uses: peaceiris/actions-gh-pages@v4
         with:
           deploy_key: ${{ secrets.BESTBALL_BRO_DATA_DEPLOY_KEY }}
           external_repository: libertyvincent/bestball-bro-data
           publish_branch: main
-          publish_dir: build/feed
+          publish_dir: build/deploy
+          keep_files: true
           commit_message: "Automated feed update from bestball-bro-sim"

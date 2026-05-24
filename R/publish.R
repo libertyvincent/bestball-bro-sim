@@ -1,7 +1,9 @@
 #' Write the projection feed to JSON per FEED_SPEC
 #'
-#' Serializes a projection data frame to `projections/nfl_{season}.json` under
-#' `out_dir`, following the per-player schema in FEED_SPEC.md.
+#' Serializes a projection data frame to `v1/projections/nfl_{season}.json`
+#' under `out_dir`, following the per-player schema in FEED_SPEC.md. The `v1/`
+#' prefix keeps our feed segregated from the legacy Clay `projections/` tree
+#' that lives at the root of bestball-bro-data.
 #'
 #' v0 includes the required fields plus the optional ones we already have
 #' (gsis_id, season percentiles, games_played). Omits weekly / stats /
@@ -19,7 +21,7 @@ publish_projections <- function(projections,
                                 model_version = "0.0.1") {
   season <- season %||% current_season()
   feed <- .projections_to_feed(projections, season, model_version)
-  out_path <- file.path(out_dir, "projections", paste0("nfl_", season, ".json"))
+  out_path <- file.path(out_dir, "v1", "projections", paste0("nfl_", season, ".json"))
   dir.create(dirname(out_path), recursive = TRUE, showWarnings = FALSE)
   jsonlite::write_json(feed, out_path, auto_unbox = TRUE, pretty = TRUE,
                        null = "null", na = "null")
@@ -99,7 +101,7 @@ publish_manifest <- function(out_dir = "../bestball-bro-data",
   )
 
   # Add projections file if it exists
-  proj_rel  <- paste0("projections/nfl_", season, ".json")
+  proj_rel  <- paste0("v1/projections/nfl_", season, ".json")
   proj_path <- file.path(out_dir, proj_rel)
   if (file.exists(proj_path)) {
     manifest$files$projections <- list(

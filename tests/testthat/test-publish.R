@@ -55,6 +55,11 @@ test_that("publish_projections writes a real JSON file", {
 
   out_path <- publish_projections(proj, out_dir = tmp, season = 2026)
   expect_true(file.exists(out_path))
+  expect_equal(
+    normalizePath(out_path, winslash = "/"),
+    normalizePath(file.path(tmp, "v1", "projections", "nfl_2026.json"),
+                  winslash = "/")
+  )
 
   parsed <- jsonlite::fromJSON(out_path, simplifyVector = FALSE)
   expect_named(parsed, c("_meta", "players"))
@@ -82,6 +87,6 @@ test_that("publish_manifest inventories the projections file when present", {
   expect_true(file.exists(manifest_path))
   m <- jsonlite::fromJSON(manifest_path, simplifyVector = FALSE)
   expect_equal(m$season, 2026)
-  expect_equal(m$files$projections$path, "projections/nfl_2026.json")
+  expect_equal(m$files$projections$path, "v1/projections/nfl_2026.json")
   expect_true(nchar(m$files$projections$sha256) > 0)
 })
