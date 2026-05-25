@@ -20,6 +20,13 @@ build/
 *.parquet
 real_v0_feed/
 
+# Throwaway local diagnostic scripts (e.g. tmp_blend_all.R)
+tmp_*.R
+
+# Auto-generated docs from roxygen — regenerate locally via
+# devtools::document(). CI uses devtools::load_all() which doesn't need them.
+man/
+
 # OS
 .DS_Store
 Thumbs.db

@@ -7,23 +7,23 @@ slates:
     csv_file: nfl_2026_season.csv
     enabled: true
   nfl_2026_eliminator:
-    underdog_slate_id: null
+    underdog_slate_id: 0ee05b31-f904-4e6e-985b-42f290e3aa3a
     display_name: NFL 2026 Eliminator Season
     season: 2026
     scoring_id: half_ppr_underdog
     csv_file: nfl_2026_eliminator.csv
-    enabled: false
+    enabled: true
   nfl_2026_weekly_winners:
-    underdog_slate_id: null
+    underdog_slate_id: d9fd5f58-393f-400c-a010-3bf79b822b48
     display_name: NFL 2026 Weekly Winners Season
     season: 2026
     scoring_id: half_ppr_underdog
     csv_file: nfl_2026_weekly_winners.csv
-    enabled: false
+    enabled: true
   nfl_2026_superflex:
-    underdog_slate_id: null
+    underdog_slate_id: 11300882-a76f-4e12-8a5e-1a6b4c513794
     display_name: NFL 2026 Superflex Season
     season: 2026
     scoring_id: half_ppr_underdog
     csv_file: nfl_2026_superflex.csv
-    enabled: false
+    enabled: true
