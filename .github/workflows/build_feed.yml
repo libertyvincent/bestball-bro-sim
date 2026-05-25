@@ -103,7 +103,7 @@ jobs:
         with:
           deploy_key: ${{ secrets.BESTBALL_BRO_DATA_DEPLOY_KEY }}
           external_repository: libertyvincent/bestball-bro-data
-          publish_branch: main
+          publish_branch: gh-pages
           publish_dir: build/deploy
           keep_files: true
           commit_message: "Automated feed update from bestball-bro-sim"
