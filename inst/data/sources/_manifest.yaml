@@ -1,0 +1,65 @@
+data_repo_base_url: "https://libertyvincent.github.io/bestball-bro-data"
+
+sources:
+  clay:
+    enabled: true
+    format: point_projection_with_stats
+    type: fetch_url
+    feed_url: sources/clay_2026_offense.json
+    weekly_team_scoring_url: sources/clay_2026_weekly_team_scoring.json
+    unit_grades_url: sources/clay_2026_unit_grades.json
+    scoring: native_underdog_half_ppr
+    has_uuid: false  # Clay uses name+team+pos
+    update_cadence: daily_automatic
+
+  etr:
+    enabled: true
+    format: rank_only
+    type: fetch_url
+    feeds:
+      nfl_2026_season:         sources/etr_2026_season.json
+      nfl_2026_eliminator:     sources/etr_2026_eliminator.json
+      nfl_2026_weekly_winners: sources/etr_2026_weekly_winners.json
+      nfl_2026_superflex:      sources/etr_2026_superflex.json
+    has_uuid: true
+    calibration_source: clay
+    update_cadence: daily_automatic
+
+  legup:
+    enabled: true
+    format: rank_only
+    type: fetch_url
+    feeds:
+      nfl_2026_season:         sources/legup_2026_ud.json
+      nfl_2026_eliminator:     sources/legup_2026_eliminator.json
+      # Weekly Winners and Superflex: LegUp doesn't cover, omit
+    has_uuid: true
+    calibration_source: clay
+    update_cadence: daily_automatic
+
+slate_weights:
+  # Per-slate weights for each source. Sources missing from a slate just
+  # don't appear -- the blender renormalizes the remaining weights to sum to 1.
+  nfl_2026_season:
+    clay:  0.333
+    etr:   0.333
+    legup: 0.333
+  nfl_2026_eliminator:
+    clay:  0.333
+    etr:   0.333
+    legup: 0.333
+  nfl_2026_weekly_winners:
+    clay:  0.5
+    etr:   0.5
+  nfl_2026_superflex:
+    clay:  0.5
+    etr:   0.5
+
+aleatoric_cv:
+  # Position-default coefficient of variation for within-source WEEKLY
+  # variance: weekly_std = cv * weekly_mean. Season aleatoric variance
+  # is sum(weekly_std^2) over active weeks.
+  QB: 0.32
+  RB: 0.50
+  WR: 0.55
+  TE: 0.60
