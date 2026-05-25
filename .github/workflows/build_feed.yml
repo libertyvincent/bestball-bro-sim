@@ -98,6 +98,29 @@ jobs:
           cp -r build/feed/v1 build/deploy/
           cp build/feed/_meta.json build/deploy/
 
+      - name: Run v2 blender + Monte Carlo simulator
+        # Writes:
+        #   build/deploy/v2/projections/<slate>.json  -> goes to gh-pages
+        #   build/deploy/v2/draws/<slate>.parquet     -> moved to artifacts
+        # Also updates build/deploy/_meta.json to register v2 entries
+        # alongside the v1 entries that the v1 path wrote earlier.
+        run: |
+          Rscript -e 'devtools::load_all(); publish_v2(out_dir = "build/deploy", n_sims = 10000L)'
+
+      - name: Move parquet draws out of publish dir
+        # Parquet draws are server-side artifacts for Layer B; they must
+        # NOT land on gh-pages (Pages has a 1 GB site soft limit; four
+        # slates of 10K-sim draws total several GB). Relocate them to a
+        # sibling tree that peaceiris will not see, then upload via
+        # actions/upload-artifact below. Three paths must agree:
+        #   (1) publish_v2 writes        build/deploy/v2/draws/*.parquet
+        #   (2) this step moves them to  build/artifacts/v2-draws/*.parquet
+        #   (3) upload-artifact step's   build/artifacts/v2-draws/*.parquet
+        run: |
+          mkdir -p build/artifacts/v2-draws
+          mv build/deploy/v2/draws/*.parquet build/artifacts/v2-draws/
+          rmdir build/deploy/v2/draws
+
       - name: Publish to bestball-bro-data
         uses: peaceiris/actions-gh-pages@v4
         with:
@@ -107,3 +130,14 @@ jobs:
           publish_dir: build/deploy
           keep_files: true
           commit_message: "Automated feed update from bestball-bro-sim"
+
+      - name: Upload v2 draws as workflow artifact
+        # Layer B's CI run (separate workflow, Sprint 3) will fetch this
+        # artifact by name. 90-day retention is enough for the daily
+        # cadence; older draws can be regenerated from the v2 JSON +
+        # blender if ever needed.
+        uses: actions/upload-artifact@v4
+        with:
+          name: v2-draws-${{ github.run_id }}
+          path: build/artifacts/v2-draws/*.parquet
+          retention-days: 90

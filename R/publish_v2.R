@@ -1,19 +1,28 @@
 #' Publish v2 blended-consensus projections for all enabled slates
 #'
-#' Loops over `inst/data/slates/_manifest.yaml`, runs [blend_slate()]
-#' on each enabled slate (writing `v2/projections/<slate_id>.json` to
-#' `out_dir`), and updates the feed root's `_meta.json` to register v2
-#' paths + checksums alongside any v1 entries already there.
+#' For each enabled slate: blends source feeds via [blend_slate()] (no
+#' JSON write yet), runs [simulate_slate()] to replace analytical
+#' percentiles with empirical Monte Carlo percentiles, writes the feed
+#' JSON, and writes the full per-player per-week draws as a parquet
+#' file under `<out_dir>/v2/draws/<slate_id>.parquet`. Then updates the
+#' feed root's `_meta.json` to register v2 paths + checksums.
 #'
-#' Sprint 2 keeps v1 and v2 published in parallel; the extension flips
-#' to v2 in Sprint 4. Until then both feeds publish and v2 is the audit
-#' surface for the new methodology.
+#' Sprint 2 kept v1 and v2 published in parallel; Sprint 2.5 keeps that
+#' arrangement but flips v2's percentiles from analytical to empirical.
+#' The parquet draws are server-side artifacts only -- they DO NOT go
+#' to gh-pages (too large for Pages's 1 GB site limit). Layer B in
+#' Sprint 3 will consume them via GitHub Actions artifacts.
 #'
 #' @param out_dir Output directory (feed root). Defaults to `"build"`.
+#' @param n_sims Number of season simulations per player (default 10000).
+#'   Drop to ~100 for fast local iteration.
+#' @param seed Optional RNG seed for reproducibility (default `NULL`).
 #' @param cache_dir HTTP cache directory passed through to [blend_slate()].
 #' @return Invisibly `TRUE`.
 #' @export
-publish_v2 <- function(out_dir = "build",
+publish_v2 <- function(out_dir   = "build",
+                       n_sims    = 10000L,
+                       seed      = NULL,
                        cache_dir = file.path("~", ".bestball-bro", "cache")) {
   sources_path <- .inst_path("data/sources", "_manifest.yaml")
   if (sources_path == "") {
@@ -26,18 +35,36 @@ publish_v2 <- function(out_dir = "build",
   slates      <- load_slate_manifest()
   enabled_ids <- names(Filter(function(s) isTRUE(s$enabled), slates))
 
-  cli::cli_alert_info("publish_v2: {length(enabled_ids)} enabled slate(s)")
+  cli::cli_alert_info(
+    "publish_v2: {length(enabled_ids)} enabled slate(s), n_sims={n_sims}")
 
   for (sid in enabled_ids) {
-    out_path <- file.path(out_dir, "v2", "projections",
-                          paste0(sid, ".json"))
-    blend_slate(
+    json_path    <- file.path(out_dir, "v2", "projections",
+                              paste0(sid, ".json"))
+    parquet_path <- file.path(out_dir, "v2", "draws",
+                              paste0(sid, ".parquet"))
+
+    cli::cli_alert_info("publish_v2 [{sid}]: blending")
+    feed <- blend_slate(
       slate_id              = sid,
       sources_manifest_path = sources_path,
       slates_manifest_path  = slates_path,
-      out_path              = out_path,
-      cache_dir             = cache_dir
+      out_path              = json_path,
+      cache_dir             = cache_dir,
+      write_json            = FALSE
     )
+
+    cli::cli_alert_info("publish_v2 [{sid}]: simulating {n_sims} sims/player")
+    sim <- simulate_slate(feed, n_sims = n_sims, seed = seed)
+
+    .write_projection_feed(sim$enriched_feed, json_path)
+
+    cli::cli_alert_info(
+      "publish_v2 [{sid}]: writing {nrow(sim$draws)} draw rows to parquet")
+    dir.create(dirname(parquet_path), recursive = TRUE, showWarnings = FALSE)
+    arrow::write_parquet(sim$draws, parquet_path)
+    cli::cli_alert_success(
+      "Wrote {nrow(sim$draws)} draw rows to {.path {parquet_path}}")
   }
 
   .update_root_meta_for_v2(out_dir, enabled_ids, slates)
