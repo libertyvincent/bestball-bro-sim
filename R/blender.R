@@ -16,13 +16,18 @@
 #' @param slates_manifest_path  Path to slates/_manifest.yaml.
 #' @param out_path Output path for `<slate_id>.json`.
 #' @param cache_dir HTTP cache directory; default `~/.bestball-bro/cache`.
+#' @param write_json If `TRUE` (default), writes the feed to `out_path`.
+#'   `publish_v2()` sets this to `FALSE` so the simulator can enrich the
+#'   feed (replacing analytical percentiles with empirical ones) before
+#'   the single final write.
 #' @return Invisibly returns the feed list (post-jsonlite shape).
 #' @export
 blend_slate <- function(slate_id,
                         sources_manifest_path,
                         slates_manifest_path,
                         out_path,
-                        cache_dir = file.path("~", ".bestball-bro", "cache")) {
+                        cache_dir = file.path("~", ".bestball-bro", "cache"),
+                        write_json = TRUE) {
 
   cli::cli_alert_info("blender [{slate_id}]: starting")
 
@@ -89,11 +94,24 @@ blend_slate <- function(slate_id,
     players        = players_out
   )
 
+  if (isTRUE(write_json)) {
+    .write_projection_feed(feed, out_path)
+  }
+  invisible(feed)
+}
+
+#' Write a v2 projection feed to JSON
+#'
+#' Factored out of `blend_slate()` so `publish_v2()` can defer the write
+#' until after the simulator has enriched percentiles.
+#' @keywords internal
+.write_projection_feed <- function(feed, out_path) {
   dir.create(dirname(out_path), recursive = TRUE, showWarnings = FALSE)
   jsonlite::write_json(feed, out_path, auto_unbox = TRUE, pretty = TRUE,
                        null = "null", na = "null")
-  cli::cli_alert_success("Wrote {length(players_out)} players to {.path {out_path}}")
-  invisible(feed)
+  cli::cli_alert_success(
+    "Wrote {length(feed$players)} players to {.path {out_path}}")
+  invisible(out_path)
 }
 
 # ============================================================================
@@ -492,16 +510,20 @@ blend_slate <- function(slate_id,
 
     cv <- as.numeric(aleatoric_cv[[pos]] %||% NA_real_)
     if (is.null(consensus$mean) || is.na(consensus$mean)) {
-      season_mean <- NA_real_
-      season_std  <- NA_real_
-      weekly      <- list()
+      season_mean      <- NA_real_
+      season_std       <- NA_real_
+      disagreement_std <- NA_real_
+      aleatoric_std    <- NA_real_
+      weekly           <- list()
     } else {
       season_mean <- consensus$mean
       # Compute weekly first; per-week std = cv * weekly_mean. Season
       # aleatoric variance = sum(weekly_std^2) over active weeks.
       wk <- .generate_weekly(season_mean, team, weekly_team, cv)
-      season_std <- sqrt(consensus$disagreement_std^2 + wk$aleatoric_season_var)
-      weekly <- wk$records
+      disagreement_std <- consensus$disagreement_std
+      aleatoric_std    <- sqrt(wk$aleatoric_season_var)
+      season_std       <- sqrt(disagreement_std^2 + aleatoric_std^2)
+      weekly           <- wk$records
     }
 
     out[[i]] <- list(
@@ -515,6 +537,14 @@ blend_slate <- function(slate_id,
                                    else round(season_mean, 1),
       season_std                 = if (is.na(season_std)) NULL
                                    else round(season_std, 1),
+      # Components of season_std exposed for the Monte Carlo simulator
+      # (two-level draw: disagreement_std outer, aleatoric inner) and
+      # for debuggability. Invariant: season_std^2 == disagreement_std^2
+      # + aleatoric_std^2.
+      disagreement_std           = if (is.na(disagreement_std)) NULL
+                                   else round(disagreement_std, 2),
+      aleatoric_std              = if (is.na(aleatoric_std)) NULL
+                                   else round(aleatoric_std, 2),
       season_percentiles         = if (is.na(season_mean)) NULL
                                    else .season_percentiles(season_mean, season_std),
       sources_used               = names(points_by_src),
