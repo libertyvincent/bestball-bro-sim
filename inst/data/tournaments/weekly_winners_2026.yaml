@@ -1,0 +1,129 @@
+# Weekly Winners
+# 17 independent weekly prize pools. One shared draft enters all 17 weeks.
+# Each week ranks ALL 186,840 entries by that week's starting lineup points.
+
+tournament_id: weekly_winners_2026
+underdog_tournament_id: 21004ed7-7e8d-49e0-b87c-5f09a3edb77a
+display_name: Weekly Winners
+description: "A Best Ball Contest with Weekly Prizes!"
+rules_url: https://app.underdogfantasy.com/rules/best-ball-weekly-winners
+image_url: https://assets.underdogfantasy.com/assets/royale/weeklywinners.png
+
+slate_id: nfl_2026_weekly_winners
+underdog_slate_id: d9fd5f58-393f-400c-a010-3bf79b822b48
+
+entry_fee_usd: 10
+total_field_size: 186840
+max_entries_per_user: 150
+draft_size: 12
+draft_rounds: 18
+pick_clock_seconds: 20
+rake_pct: 0.09
+cutoff_at: "2026-09-09T22:26:00Z"
+
+# Special structure marker - different from advancement tournaments
+structure_type: independent_weekly_pools
+
+inherits_common_rules: true
+
+scoring:
+  receptions: 0.5
+  receiving_td: 6
+  receiving_yard: 0.1
+  rushing_td: 6
+  rushing_yard: 0.1
+  passing_yard: 0.04
+  passing_td: 4
+  interception: -1
+  two_pt_conversion: 2
+  fumble_lost: -2
+
+roster:
+  total_slots: 18
+  starting_lineup:
+    QB: 1
+    RB: 2
+    WR: 3
+    TE: 1
+    FLEX: 1
+  bench: 10
+  # Position caps inherited from slate (nfl_2026_weekly_winners): QB:4, RB:9, WR:10, TE:5
+
+best_ball_lineup_rule:
+  flex_eligible: [RB, WR, TE]
+  flex_selection: highest_weekly_score_among_overflow_RB_WR_TE
+
+simulator_output_schema:
+  primary_unit: per_player_per_week_ev
+  derived_aggregation: sum_across_weeks_for_season_total
+  rationale: |
+    Each week is an independent prize pool. Per-week EV is the natural
+    computational unit. Season total is just the sum. Both exposed.
+    Drafters may want to target specific weeks (bye-week stacks, etc.)
+    so per-week breakdown is first-class output, not diagnostic.
+
+bye_week_strategy_note: |
+  Week 11 has the most teams on bye in 2026. Stacking bye weeks is a
+  legitimate strategy: sacrifice expected score in some weeks to maximize
+  active-player count (and thus expected score) in target weeks. The
+  field simulation in Layer B should naturally capture this since real
+  drafters employ varying bye-week construction strategies.
+
+stages:
+  # 17 weeks, each ranking the full 186,840-entry field independently.
+  # underdog_round_id is TBD - Underdog only exposes current_weekly_winner_week_id
+  # via API; future weeks' UUIDs don't exist until that week becomes current.
+  # Extension resolves at runtime via Underdog's API.
+
+  - {id: week_1,  underdog_round_id: TBD, week: 1,  pod_structure: full_field, pod_size: 186840, ranking_metric: week_1_starting_lineup_points}
+  - {id: week_2,  underdog_round_id: TBD, week: 2,  pod_structure: full_field, pod_size: 186840, ranking_metric: week_2_starting_lineup_points}
+  - {id: week_3,  underdog_round_id: TBD, week: 3,  pod_structure: full_field, pod_size: 186840, ranking_metric: week_3_starting_lineup_points}
+  - {id: week_4,  underdog_round_id: TBD, week: 4,  pod_structure: full_field, pod_size: 186840, ranking_metric: week_4_starting_lineup_points}
+  - {id: week_5,  underdog_round_id: TBD, week: 5,  pod_structure: full_field, pod_size: 186840, ranking_metric: week_5_starting_lineup_points}
+  - {id: week_6,  underdog_round_id: TBD, week: 6,  pod_structure: full_field, pod_size: 186840, ranking_metric: week_6_starting_lineup_points}
+  - {id: week_7,  underdog_round_id: TBD, week: 7,  pod_structure: full_field, pod_size: 186840, ranking_metric: week_7_starting_lineup_points}
+  - {id: week_8,  underdog_round_id: TBD, week: 8,  pod_structure: full_field, pod_size: 186840, ranking_metric: week_8_starting_lineup_points}
+  - {id: week_9,  underdog_round_id: TBD, week: 9,  pod_structure: full_field, pod_size: 186840, ranking_metric: week_9_starting_lineup_points}
+  - {id: week_10, underdog_round_id: TBD, week: 10, pod_structure: full_field, pod_size: 186840, ranking_metric: week_10_starting_lineup_points}
+  - {id: week_11, underdog_round_id: TBD, week: 11, pod_structure: full_field, pod_size: 186840, ranking_metric: week_11_starting_lineup_points}
+  - {id: week_12, underdog_round_id: TBD, week: 12, pod_structure: full_field, pod_size: 186840, ranking_metric: week_12_starting_lineup_points}
+  - {id: week_13, underdog_round_id: TBD, week: 13, pod_structure: full_field, pod_size: 186840, ranking_metric: week_13_starting_lineup_points}
+  - {id: week_14, underdog_round_id: TBD, week: 14, pod_structure: full_field, pod_size: 186840, ranking_metric: week_14_starting_lineup_points}
+  - {id: week_15, underdog_round_id: TBD, week: 15, pod_structure: full_field, pod_size: 186840, ranking_metric: week_15_starting_lineup_points}
+  - {id: week_16, underdog_round_id: TBD, week: 16, pod_structure: full_field, pod_size: 186840, ranking_metric: week_16_starting_lineup_points}
+  - {id: week_17, underdog_round_id: TBD, week: 17, pod_structure: full_field, pod_size: 186840, ranking_metric: week_17_starting_lineup_points}
+
+payouts:
+  # SAME payout schedule applies to all 17 weeks independently.
+  # A team can cash in multiple weeks (and often does for the better teams).
+  per_week_tiers:
+    - {rank_from: 1,    rank_to: 1,    usd: 20000}
+    - {rank_from: 2,    rank_to: 2,    usd: 10000}
+    - {rank_from: 3,    rank_to: 3,    usd: 5500}
+    - {rank_from: 4,    rank_to: 4,    usd: 4000}
+    - {rank_from: 5,    rank_to: 5,    usd: 3500}
+    - {rank_from: 6,    rank_to: 6,    usd: 3000}
+    - {rank_from: 7,    rank_to: 7,    usd: 2500}
+    - {rank_from: 8,    rank_to: 8,    usd: 2000}
+    - {rank_from: 9,    rank_to: 9,    usd: 1500}
+    - {rank_from: 10,   rank_to: 10,   usd: 1250}
+    - {rank_from: 11,   rank_to: 15,   usd: 1000}
+    - {rank_from: 16,   rank_to: 20,   usd: 750}
+    - {rank_from: 21,   rank_to: 25,   usd: 500}
+    - {rank_from: 26,   rank_to: 30,   usd: 250}
+    - {rank_from: 31,   rank_to: 40,   usd: 125}
+    - {rank_from: 41,   rank_to: 50,   usd: 50}
+    - {rank_from: 51,   rank_to: 100,  usd: 30}
+    - {rank_from: 101,  rank_to: 200,  usd: 20}
+    - {rank_from: 201,  rank_to: 500,  usd: 15}
+    - {rank_from: 501,  rank_to: 4000, usd: 7}
+
+  tie_breaking:
+    rule: split_combined_pot_evenly
+    description: |
+      Tied entries split combined prize for their tied tier.
+      Example: 3-way tie for 1st splits ($20K + $10K + $5.5K) / 3.
+      4th place becomes the next unique score.
+
+  expected_total_per_week: 99655
+  expected_total_season: 1694135

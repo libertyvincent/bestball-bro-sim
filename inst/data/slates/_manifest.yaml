@@ -6,6 +6,11 @@ slates:
     scoring_id: half_ppr_underdog
     csv_file: nfl_2026_season.csv
     enabled: true
+    position_caps:
+      QB: 4
+      RB: 9
+      WR: 10
+      TE: 5
   nfl_2026_eliminator:
     underdog_slate_id: 0ee05b31-f904-4e6e-985b-42f290e3aa3a
     display_name: NFL 2026 Eliminator Season
@@ -13,6 +18,11 @@ slates:
     scoring_id: half_ppr_underdog
     csv_file: nfl_2026_eliminator.csv
     enabled: true
+    position_caps:
+      QB: 4
+      RB: 9
+      WR: 10
+      TE: 5
   nfl_2026_weekly_winners:
     underdog_slate_id: d9fd5f58-393f-400c-a010-3bf79b822b48
     display_name: NFL 2026 Weekly Winners Season
@@ -20,6 +30,11 @@ slates:
     scoring_id: half_ppr_underdog
     csv_file: nfl_2026_weekly_winners.csv
     enabled: true
+    position_caps:
+      QB: 4
+      RB: 9
+      WR: 10
+      TE: 5
   nfl_2026_superflex:
     underdog_slate_id: 11300882-a76f-4e12-8a5e-1a6b4c513794
     display_name: NFL 2026 Superflex Season
@@ -27,3 +42,8 @@ slates:
     scoring_id: half_ppr_underdog
     csv_file: nfl_2026_superflex.csv
     enabled: true
+    position_caps:
+      QB: 6
+      RB: 10
+      WR: 12
+      TE: 5

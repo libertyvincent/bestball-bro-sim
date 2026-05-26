@@ -1,0 +1,257 @@
+# The Eliminator
+# 17-round knockout. Top half of pod survives Week 1; H2H every week thereafter.
+
+tournament_id: eliminator_2026
+underdog_tournament_id: 2e38f5ce-4d72-4c66-9830-6a81c8477c09
+display_name: The Eliminator
+description: "17 Weeks of Advancement - $200k to first!"
+rules_url: https://app.underdogfantasy.com/rules/tournaments/the-eliminator-2026
+image_url: https://assets.underdogfantasy.com/assets/royale/tournament_theeliminator.png
+
+slate_id: nfl_2026_eliminator
+underdog_slate_id: 0ee05b31-f904-4e6e-985b-42f290e3aa3a
+
+entry_fee_usd: 10
+total_field_size: 196608
+max_entries_per_user: 150
+draft_size: 12
+draft_rounds: 18
+pick_clock_seconds: 20
+rake_pct: 0.11
+cutoff_at: "2026-09-09T22:26:00Z"
+
+inherits_common_rules: true
+
+scoring:
+  receptions: 0.5
+  receiving_td: 6
+  receiving_yard: 0.1
+  rushing_td: 6
+  rushing_yard: 0.1
+  passing_yard: 0.04
+  passing_td: 4
+  interception: -1
+  two_pt_conversion: 2
+  fumble_lost: -2
+
+roster:
+  total_slots: 18
+  starting_lineup:
+    QB: 1
+    RB: 2
+    WR: 3
+    TE: 1
+    FLEX: 1
+  bench: 10
+  # Position caps inherited from slate (nfl_2026_eliminator): QB:4, RB:9, WR:10, TE:5
+
+best_ball_lineup_rule:
+  flex_eligible: [RB, WR, TE]
+  flex_selection: highest_weekly_score_among_overflow_RB_WR_TE
+
+simulator_output_schema:
+  primary_unit: per_player_total_ev
+  per_week_breakdown: diagnostic_only
+  rationale: |
+    Each elimination week matters individually but player value is dominated
+    by contribution to surviving each round. Total EV is the natural unit.
+
+stages:
+  - id: week_1
+    abbreviation: Qual
+    underdog_round_id: 1e8c3b5f-a093-4f3e-b2be-53c5f268a325
+    round_number: 1
+    weeks: [1]
+    pod_structure: within_draft
+    pod_size: 12
+    seats_entering: 196608
+    advancement:
+      type: top_n_by_pod
+      "n": 6
+      ranking_metric: week_1_starting_lineup_points
+    # Math: 196608 / 12 * 6 = 98304 advance
+
+  - id: week_2
+    abbreviation: Qual
+    underdog_round_id: 28388846-82ad-45e0-afe1-83af5f7716e6
+    round_number: 2
+    weeks: [2]
+    pod_structure: random_h2h
+    pod_size: 2
+    seats_entering: 98304
+    advancement: {type: top_n_by_pod, "n": 1, ranking_metric: week_2_starting_lineup_points}
+
+  - id: week_3
+    abbreviation: Qual
+    underdog_round_id: 6d254a0e-56d7-4068-8228-407ab6d10a5a
+    round_number: 3
+    weeks: [3]
+    pod_structure: random_h2h
+    pod_size: 2
+    seats_entering: 49152
+    advancement: {type: top_n_by_pod, "n": 1, ranking_metric: week_3_starting_lineup_points}
+
+  - id: week_4
+    abbreviation: Qual
+    underdog_round_id: 325c7820-29bb-4830-97ac-3918739cc3f8
+    round_number: 4
+    weeks: [4]
+    pod_structure: random_h2h
+    pod_size: 2
+    seats_entering: 24576
+    advancement: {type: top_n_by_pod, "n": 1, ranking_metric: week_4_starting_lineup_points}
+
+  - id: week_5
+    abbreviation: Qual
+    underdog_round_id: 191fca32-9b48-48e9-bf79-cdaa908e7c46
+    round_number: 5
+    weeks: [5]
+    pod_structure: random_h2h
+    pod_size: 2
+    seats_entering: 12288
+    advancement: {type: top_n_by_pod, "n": 1, ranking_metric: week_5_starting_lineup_points}
+
+  - id: week_6
+    abbreviation: Qual
+    underdog_round_id: bda1b809-5ff3-44da-9913-f855abfcbcb8
+    round_number: 6
+    weeks: [6]
+    pod_structure: random_h2h
+    pod_size: 2
+    seats_entering: 6144
+    advancement: {type: top_n_by_pod, "n": 1, ranking_metric: week_6_starting_lineup_points}
+
+  - id: week_7
+    abbreviation: Qual
+    underdog_round_id: 67720d95-eb1a-4299-ae7e-ba8e20e9a56a
+    round_number: 7
+    weeks: [7]
+    pod_structure: random_h2h
+    pod_size: 2
+    seats_entering: 3072
+    advancement: {type: top_n_by_pod, "n": 1, ranking_metric: week_7_starting_lineup_points}
+
+  - id: week_8
+    abbreviation: Qual
+    underdog_round_id: f79526ee-9137-49bf-87f6-9d704750e4df
+    round_number: 8
+    weeks: [8]
+    pod_structure: random_h2h
+    pod_size: 2
+    seats_entering: 1536
+    advancement: {type: top_n_by_pod, "n": 1, ranking_metric: week_8_starting_lineup_points}
+
+  - id: week_9
+    abbreviation: Qual
+    underdog_round_id: 7229b17b-848e-48cb-8ccd-39c7527e418e
+    round_number: 9
+    weeks: [9]
+    pod_structure: random_h2h
+    pod_size: 2
+    seats_entering: 768
+    advancement: {type: top_n_by_pod, "n": 1, ranking_metric: week_9_starting_lineup_points}
+
+  - id: week_10
+    abbreviation: Qual
+    underdog_round_id: 0c6cf58d-f770-4fbb-a754-556e3ed53018
+    round_number: 10
+    weeks: [10]
+    pod_structure: random_h2h
+    pod_size: 2
+    seats_entering: 384
+    advancement: {type: top_n_by_pod, "n": 1, ranking_metric: week_10_starting_lineup_points}
+
+  - id: week_11
+    abbreviation: Qual
+    underdog_round_id: 46956a93-ef19-4ee8-a348-b9d4b8ac6823
+    round_number: 11
+    weeks: [11]
+    pod_structure: random_h2h
+    pod_size: 2
+    seats_entering: 192
+    advancement: {type: top_n_by_pod, "n": 1, ranking_metric: week_11_starting_lineup_points}
+
+  - id: week_12
+    abbreviation: Qual
+    underdog_round_id: 44de7a6f-35b5-4965-8a7f-21112fde183b
+    round_number: 12
+    weeks: [12]
+    pod_structure: random_h2h
+    pod_size: 2
+    seats_entering: 96
+    advancement: {type: top_n_by_pod, "n": 1, ranking_metric: week_12_starting_lineup_points}
+
+  - id: week_13
+    abbreviation: Qual
+    underdog_round_id: f695967b-4064-47ce-9cbf-65070d0d55ba
+    round_number: 13
+    weeks: [13]
+    pod_structure: random_h2h
+    pod_size: 2
+    seats_entering: 48
+    advancement: {type: top_n_by_pod, "n": 1, ranking_metric: week_13_starting_lineup_points}
+
+  - id: week_14
+    abbreviation: Qual
+    underdog_round_id: 3e151182-ab6e-4ac8-a7c9-ce23f5d8a991
+    round_number: 14
+    weeks: [14]
+    pod_structure: random_h2h
+    pod_size: 2
+    seats_entering: 24
+    advancement: {type: top_n_by_pod, "n": 1, ranking_metric: week_14_starting_lineup_points}
+
+  - id: week_15_quarterfinals
+    abbreviation: QF
+    underdog_round_id: 6e492895-b898-4a66-a8ef-88ec26b2fe55
+    round_number: 15
+    weeks: [15]
+    pod_structure: random_h2h
+    pod_size: 2
+    seats_entering: 12
+    advancement: {type: top_n_by_pod, "n": 1, ranking_metric: week_15_starting_lineup_points}
+
+  - id: week_16_semifinals
+    abbreviation: SF
+    underdog_round_id: 097a159d-a206-41fe-8137-7ff0956ccc51
+    round_number: 16
+    weeks: [16]
+    pod_structure: random_h2h
+    pod_size: 2
+    seats_entering: 6
+    advancement: {type: top_n_by_pod, "n": 1, ranking_metric: week_16_starting_lineup_points}
+
+  - id: week_17_championship
+    abbreviation: Final
+    underdog_round_id: 6ad38ae6-1b76-49cb-af14-f6fee20bde8c
+    round_number: 17
+    weeks: [17]
+    pod_structure: single_pod
+    pod_size: 3
+    seats_entering: 3
+    advancement:
+      type: rank_all
+      ranking_metric: week_17_starting_lineup_points
+
+payouts:
+  # Single payout table based on final placement.
+  # Teams eliminated in Weeks 1, 2, or 3 receive nothing.
+  tiers:
+    - {rank_from: 1,     rank_to: 1,     usd: 200000, eligibility: week_17_winner}
+    - {rank_from: 2,     rank_to: 2,     usd: 100000, eligibility: week_17_runner_up}
+    - {rank_from: 3,     rank_to: 3,     usd: 76000,  eligibility: week_17_third}
+    - {rank_from: 4,     rank_to: 6,     usd: 50000,  eligibility: week_16_losers}
+    - {rank_from: 7,     rank_to: 12,    usd: 20000,  eligibility: week_15_losers}
+    - {rank_from: 13,    rank_to: 24,    usd: 10000,  eligibility: week_14_losers}
+    - {rank_from: 25,    rank_to: 48,    usd: 5000,   eligibility: week_13_losers}
+    - {rank_from: 49,    rank_to: 96,    usd: 2000,   eligibility: week_12_losers}
+    - {rank_from: 97,    rank_to: 192,   usd: 1000,   eligibility: week_11_losers}
+    - {rank_from: 193,   rank_to: 384,   usd: 500,    eligibility: week_10_losers}
+    - {rank_from: 385,   rank_to: 768,   usd: 200,    eligibility: week_9_losers}
+    - {rank_from: 769,   rank_to: 1536,  usd: 102,    eligibility: week_8_losers}
+    - {rank_from: 1537,  rank_to: 3072,  usd: 52,     eligibility: week_7_losers}
+    - {rank_from: 3073,  rank_to: 6144,  usd: 31,     eligibility: week_6_losers}
+    - {rank_from: 6145,  rank_to: 12288, usd: 20,     eligibility: week_5_losers}
+    - {rank_from: 12289, rank_to: 24576, usd: 10,     eligibility: week_4_losers}
+  # Note: Weeks 1, 2, 3 eliminators receive $0. The "field" that gets any payout
+  # is everyone who survives to at least Week 5 (~12.5% of starting field).

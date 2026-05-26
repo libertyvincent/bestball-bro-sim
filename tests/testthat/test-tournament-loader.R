@@ -1,0 +1,184 @@
+test_that("load_tournaments loads all 4 definitions without error", {
+  tnmts <- load_tournaments()
+  expect_setequal(
+    names(tnmts),
+    c("bbm7", "eliminator_2026", "weekly_winners_2026",
+      "frenchie3_superflex_double_entry")
+  )
+  for (t in tnmts) expect_s3_class(t, "bbbro_tournament_def")
+})
+
+test_that("each tournament's slate_id resolves in the slate manifest", {
+  tnmts <- load_tournaments()
+  slates <- yaml::read_yaml(.inst_path("data/slates", "_manifest.yaml"))$slates
+  for (t in tnmts) {
+    expect_true(
+      t$slate_id %in% names(slates),
+      info = sprintf("tournament %s -> slate %s", t$tournament_id, t$slate_id)
+    )
+  }
+})
+
+test_that("BBM7 stage math validates: 672336 -> 112056 -> 8004 -> 667", {
+  bbm <- load_tournament("bbm7")
+  seats <- vapply(bbm$stages, function(s) s$seats_entering, numeric(1))
+  expect_equal(seats, c(672336, 112056, 8004, 667))
+})
+
+test_that("Eliminator stage math validates: full halving chain ending at 3", {
+  el <- load_tournament("eliminator_2026")
+  seats <- vapply(el$stages, function(s) s$seats_entering, numeric(1))
+  expect_equal(
+    seats,
+    c(196608, 98304, 49152, 24576, 12288, 6144, 3072, 1536,
+      768, 384, 192, 96, 48, 24, 12, 6, 3)
+  )
+})
+
+test_that("Frenchie3 Superflex stage math: 5616 -> 1872 -> 936 -> 468", {
+  fr <- load_tournament("frenchie3_superflex_double_entry")
+  seats <- vapply(fr$stages, function(s) s$seats_entering, numeric(1))
+  expect_equal(seats, c(5616, 1872, 936, 468))
+})
+
+test_that("Weekly Winners has 17 stages and is marked independent_weekly_pools", {
+  ww <- load_tournament("weekly_winners_2026")
+  expect_equal(ww$structure_type, "independent_weekly_pools")
+  expect_length(ww$stages, 17)
+  # All 17 stages should have round_id == "TBD" (Underdog hasn't exposed them)
+  rids <- vapply(ww$stages, function(s) s$underdog_round_id, character(1))
+  expect_true(all(rids == "TBD"))
+})
+
+test_that("position caps are present on every tournament's slate", {
+  tnmts <- load_tournaments()
+  slates <- yaml::read_yaml(.inst_path("data/slates", "_manifest.yaml"))$slates
+  for (t in tnmts) {
+    caps <- slates[[t$slate_id]]$position_caps
+    expect_false(is.null(caps),
+                 info = sprintf("missing caps for slate %s", t$slate_id))
+    expect_setequal(names(caps), c("QB", "RB", "WR", "TE"))
+  }
+})
+
+test_that("resolve_round_to_tournament finds BBM7 by qualifiers round_id", {
+  expect_equal(
+    resolve_round_to_tournament("8674b7f5-7fbf-4ae5-aac8-f7d8e390f5bf"),
+    "bbm7"
+  )
+  # Eliminator week_1
+  expect_equal(
+    resolve_round_to_tournament("1e8c3b5f-a093-4f3e-b2be-53c5f268a325"),
+    "eliminator_2026"
+  )
+  # Frenchie3 SFLEX qualifiers
+  expect_equal(
+    resolve_round_to_tournament("8c8c22db-a875-4583-bb31-ad381400a4ed"),
+    "frenchie3_superflex_double_entry"
+  )
+})
+
+test_that("resolve_round_to_tournament returns NULL for unknown round_id", {
+  expect_null(resolve_round_to_tournament("00000000-0000-0000-0000-000000000000"))
+})
+
+test_that("resolve_round_to_tournament does not match TBD against TBD", {
+  # Weekly Winners has 17 TBD stages. Passing TBD must not return weekly_winners.
+  expect_null(resolve_round_to_tournament("TBD"))
+})
+
+test_that("inherits_common_rules merges shared fields into the tournament", {
+  bbm <- load_tournament("bbm7")
+  # These fields live in _common_rules.yaml, not in bbm7.yaml itself
+  expect_equal(bbm$draft_mechanics$type, "snake_draft")
+  expect_true(isTRUE(bbm$adp_pick_blocking$enabled))
+  expect_true(isTRUE(bbm$wildcard_advancement$enabled))
+  # And the tournament's own fields are still present
+  expect_equal(bbm$tournament_id, "bbm7")
+  expect_equal(bbm$total_field_size, 672336)
+})
+
+test_that(".validate_tournament rejects unknown slate_id", {
+  fake_slates <- list(slates = list(only_known_slate = list(position_caps = list(QB = 1))))
+  bad <- list(
+    tournament_id = "bad", underdog_tournament_id = "x",
+    slate_id = "no_such_slate", scoring = list(), roster = list(),
+    stages = list(list(id = "s1", underdog_round_id = "r1")),
+    payouts = list(tiers = list(list(rank_from = 1, rank_to = 1, usd = 100)))
+  )
+  expect_error(
+    .validate_tournament(bad, fake_slates),
+    "unknown slate_id"
+  )
+})
+
+test_that(".validate_tournament rejects slate missing position_caps", {
+  fake_slates <- list(slates = list(some_slate = list()))
+  bad <- list(
+    tournament_id = "bad", underdog_tournament_id = "x",
+    slate_id = "some_slate", scoring = list(), roster = list(),
+    stages = list(list(id = "s1", underdog_round_id = "r1")),
+    payouts = list(tiers = list(list(rank_from = 1, rank_to = 1, usd = 100)))
+  )
+  expect_error(.validate_tournament(bad, fake_slates), "position_caps")
+})
+
+test_that(".validate_tournament rejects TBD round_id on non-WeeklyWinners", {
+  fake_slates <- list(slates = list(s = list(position_caps = list(QB = 1))))
+  bad <- list(
+    tournament_id = "bad", underdog_tournament_id = "x", slate_id = "s",
+    scoring = list(), roster = list(),
+    stages = list(list(id = "s1", underdog_round_id = "TBD")),
+    payouts = list(tiers = list(list(rank_from = 1, rank_to = 1, usd = 100)))
+  )
+  expect_error(.validate_tournament(bad, fake_slates), "TBD")
+})
+
+test_that(".validate_tournament permits TBD on independent_weekly_pools", {
+  fake_slates <- list(slates = list(s = list(position_caps = list(QB = 1))))
+  ok <- list(
+    tournament_id = "ww", underdog_tournament_id = "x", slate_id = "s",
+    structure_type = "independent_weekly_pools",
+    scoring = list(), roster = list(),
+    stages = list(list(id = "w1", underdog_round_id = "TBD")),
+    payouts = list(per_week_tiers = list(list(rank_from = 1, rank_to = 1, usd = 100)))
+  )
+  expect_silent(.validate_tournament(ok, fake_slates))
+})
+
+test_that(".validate_tournament rejects intra-table payout overlap", {
+  fake_slates <- list(slates = list(s = list(position_caps = list(QB = 1))))
+  bad <- list(
+    tournament_id = "bad", underdog_tournament_id = "x", slate_id = "s",
+    scoring = list(), roster = list(),
+    stages = list(list(id = "s1", underdog_round_id = "r1")),
+    payouts = list(tiers = list(
+      list(rank_from = 1, rank_to = 10, usd = 100),
+      list(rank_from = 5, rank_to = 15, usd = 50)   # overlaps 5-10
+    ))
+  )
+  expect_error(.validate_tournament(bad, fake_slates), "overlapping tiers")
+})
+
+test_that(".validate_tournament permits intentional cross-table overlap (BBM7-style)", {
+  # BBM7 stacks qualifier_round + championship_round payouts -- both can apply
+  # to the same entry. That cross-table overlap must NOT be flagged.
+  expect_silent(load_tournament("bbm7"))
+})
+
+test_that(".validate_tournament catches seats-entering math mismatch", {
+  fake_slates <- list(slates = list(s = list(position_caps = list(QB = 1))))
+  bad <- list(
+    tournament_id = "bad", underdog_tournament_id = "x", slate_id = "s",
+    scoring = list(), roster = list(),
+    stages = list(
+      list(id = "s1", underdog_round_id = "r1",
+           seats_entering = 1200, pod_size = 12,
+           advancement = list(type = "top_n_by_pod", n = 2)),
+      list(id = "s2", underdog_round_id = "r2",
+           seats_entering = 999)  # should be 1200/12*2 = 200
+    ),
+    payouts = list(tiers = list(list(rank_from = 1, rank_to = 1, usd = 1)))
+  )
+  expect_error(.validate_tournament(bad, fake_slates), "Seats-entering math mismatch")
+})

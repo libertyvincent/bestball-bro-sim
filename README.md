@@ -168,6 +168,41 @@ Parquet draws are **server-side artifacts only** — they do NOT go to GitHub Pa
 
 Single-slate benchmark on the GitHub Actions runner equivalent (`n_sims = 10000`, ~450 active players, 17 active weeks): **~77 seconds**. Four slates: ~5 minutes wall time in CI. Peak memory: ~2 GB per slate (long-format draws). The 10K knob trades sim accuracy for speed — drop to `n_sims = 100` for fast local iteration.
 
+## Tournaments (Sprint 3a)
+
+Per-tournament definitions live under `inst/data/tournaments/`, one YAML per tournament plus a shared `_common_rules.yaml`. These are pure-data definitions consumed by Layer B's simulator (Sprint 3b+) and by the extension's `round_id → tournament_id` resolver.
+
+Loader API (`R/tournament_loader.R`):
+
+```r
+load_tournaments()                                     # all definitions, keyed by tournament_id
+load_tournament("bbm7")                                # one tournament
+resolve_round_to_tournament("8674b7f5-...")            # round_id (UUID) -> "bbm7" or NULL
+```
+
+### Common-rules inheritance
+
+Each tournament YAML opts in via `inherits_common_rules: true`. At load time, fields from `_common_rules.yaml` (`draft_mechanics`, `lineup_mechanics`, `roster_lock`, `advancement_pod_formation`, `wildcard_advancement`, `tie_breaking`, `adp_pick_blocking`, `slow_draft_clock_progression`) are merged in non-destructively: the tournament's own keys always win.
+
+### Adding a new tournament
+
+1. Drop a new YAML in `inst/data/tournaments/<tournament_id>.yaml`.
+2. Confirm its `slate_id` exists in `inst/data/slates/_manifest.yaml` and the slate has a `position_caps` block.
+3. Run `devtools::test(filter = "tournament-loader")` — the validator checks required fields, slate cross-reference, stage seats-entering math, and per-table payout non-overlap.
+4. Commit.
+
+### Round-ID → tournament-ID mapping
+
+Each stage carries an `underdog_round_id` (UUID from Underdog's network responses). The extension reads `round_id` from the draft URL and calls `resolve_round_to_tournament()` to find the parent tournament definition. `underdog_round_id: TBD` is permitted **only** for tournaments marked `structure_type: independent_weekly_pools` (Weekly Winners — Underdog only exposes the current week's round UUID; future weeks' IDs don't exist until they go live). The extension is expected to resolve TBD rounds at runtime via Underdog's API.
+
+### Payout-table structure
+
+The validator flags overlapping tiers **within** a single payout table but **not across** tables. BBM7 intentionally stacks two tables (`qualifier_round` + `championship_round`) — a top-10 weeks 1–14 finish wins a qualifier-round prize *and* can win a championship-round prize. That's by design.
+
+### Superflex tournaments
+
+Underdog runs a family of Superflex tournaments with the same general 4-stage structure but different field sizes, entry caps, and payouts. We model **one** representative (`frenchie3_superflex_double_entry`) and rely on the extension's closest-match fallback (by field size + entry fee) for unmodeled variants. If a Superflex variant becomes important enough to model explicitly, add a new YAML.
+
 ## Install (dev)
 
 ```r
