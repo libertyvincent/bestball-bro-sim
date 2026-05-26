@@ -1,0 +1,151 @@
+# The Frenchie 3 but Superflex
+# Sample Superflex tournament. One of multiple Superflex variants Underdog runs.
+# Layer B output keyed by tournament_id; closest-match fallback for unmodeled variants.
+
+tournament_id: frenchie3_superflex_double_entry
+underdog_tournament_id: e6b02a45-9c58-4cd5-a083-0c5618443b2b
+display_name: "The Frenchie 3 but Superflex"
+description: "Double Entry - $10k to first!"
+rules_url: https://app.underdogsports.com/rules/tournaments/the-frenchie-3-but-superflex
+image_url: https://storage.googleapis.com/underdog-inc/assets/tournaments/frenchie.png
+
+slate_id: nfl_2026_superflex
+underdog_slate_id: 11300882-a76f-4e12-8a5e-1a6b4c513794
+
+entry_fee_usd: 10
+total_field_size: 5616
+max_entries_per_user: 2          # NOTE: double-entry tournament, not 150
+draft_size: 12
+draft_rounds: 20                  # 20 rounds, not 18 (Superflex has bigger rosters)
+pick_clock_seconds: 20
+rake_pct: 0.11
+cutoff_at: "2026-09-09T22:14:00Z"
+
+inherits_common_rules: true
+
+tournament_family_note: |
+  Underdog runs multiple Superflex tournaments with the same general 4-round
+  structure but different field sizes, entry caps, and payouts. This YAML is
+  for "The Frenchie 3 but Superflex" specifically. When the extension
+  encounters a Superflex tournament we haven't modeled explicitly, it should
+  fall back to closest-match by field size + entry fee.
+
+scoring:
+  receptions: 0.5
+  receiving_td: 6
+  receiving_yard: 0.1
+  rushing_td: 6
+  rushing_yard: 0.1
+  passing_yard: 0.04
+  passing_td: 4
+  interception: -1
+  two_pt_conversion: 2
+  fumble_lost: -2
+
+roster:
+  total_slots: 20
+  starting_lineup:
+    QB: 1
+    RB: 2
+    WR: 2     # Note: 2 WR, not 3 like Season slate
+    TE: 1
+    FLEX: 1   # RB / WR / TE eligible
+    SFLEX: 1  # QB / RB / WR / TE eligible (the Superflex slot)
+  bench: 12
+  # Position caps inherited from slate (nfl_2026_superflex): QB:6, RB:10, WR:12, TE:5
+
+best_ball_lineup_rule:
+  flex_eligible: [RB, WR, TE]
+  sflex_eligible: [QB, RB, WR, TE]
+  fill_order: [QB, RB, WR, TE, FLEX, SFLEX]
+  description: |
+    Fill required positions in order (QB/RB/WR/TE base slots first), then
+    FLEX with highest remaining FLEX-eligible player (RB/WR/TE), then SFLEX
+    with highest remaining any-position-eligible player. Since FLEX has
+    stricter eligibility than SFLEX, sequential fill is provably optimal.
+
+    Strategic implication: SFLEX typically goes to the 2nd-best QB, since
+    QB scoring usually outpaces tertiary RB/WR/TE. This makes QB depth
+    massively more valuable than in standard formats.
+
+simulator_output_schema:
+  primary_unit: per_player_total_ev
+  per_week_breakdown: diagnostic_only
+  rationale: |
+    Multi-stage advancement tournament. Same as BBM7 — player value
+    dominated by contribution to advancing through structure.
+
+stages:
+  - id: qualifiers
+    abbreviation: Qual
+    underdog_round_id: 8c8c22db-a875-4583-bb31-ad381400a4ed
+    round_number: 1
+    weeks: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
+    pod_structure: within_draft
+    pod_size: 12
+    seats_entering: 5616
+    advancement:
+      type: top_n_by_pod
+      "n": 4   # 4/12 advance — more generous than BBM7's 2/12
+      ranking_metric: cumulative_starting_lineup_points_weeks_1_14
+    # Math: 5616 / 12 * 4 = 1872 advance
+
+  - id: quarterfinals
+    abbreviation: QF
+    underdog_round_id: fb21078e-1b9b-4263-a4f4-e0b95f8f4295
+    round_number: 2
+    weeks: [15]
+    pod_structure: random_h2h
+    pod_size: 2
+    seats_entering: 1872
+    advancement:
+      type: top_n_by_pod
+      "n": 1
+      ranking_metric: week_15_starting_lineup_points
+    # Math: 1872 / 2 = 936 advance
+
+  - id: semifinals
+    abbreviation: SF
+    underdog_round_id: 47fb9903-c76c-4a3d-8c99-c0b2d32a52f6
+    round_number: 3
+    weeks: [16]
+    pod_structure: random_h2h
+    pod_size: 2
+    seats_entering: 936
+    advancement:
+      type: top_n_by_pod
+      "n": 1
+      ranking_metric: week_16_starting_lineup_points
+    # Math: 936 / 2 = 468 advance
+
+  - id: championship
+    abbreviation: Final
+    underdog_round_id: ab50a7be-e154-4d01-91c4-8372ccaaf2ec
+    round_number: 4
+    weeks: [17]
+    pod_structure: single_pod
+    pod_size: 468
+    seats_entering: 468
+    advancement:
+      type: rank_all
+      ranking_metric: week_17_starting_lineup_points
+
+payouts:
+  championship_round:
+    tiers:
+      - {rank_from: 1,    rank_to: 1,    usd: 10000, eligibility: finalist}
+      - {rank_from: 2,    rank_to: 2,    usd: 5000,  eligibility: finalist}
+      - {rank_from: 3,    rank_to: 3,    usd: 2500,  eligibility: finalist}
+      - {rank_from: 4,    rank_to: 4,    usd: 1000,  eligibility: finalist}
+      - {rank_from: 5,    rank_to: 5,    usd: 725,   eligibility: finalist}
+      - {rank_from: 6,    rank_to: 10,   usd: 500,   eligibility: finalist}
+      - {rank_from: 11,   rank_to: 15,   usd: 250,   eligibility: finalist}
+      - {rank_from: 16,   rank_to: 20,   usd: 150,   eligibility: finalist}
+      - {rank_from: 21,   rank_to: 25,   usd: 100,   eligibility: finalist}
+      - {rank_from: 26,   rank_to: 50,   usd: 75,    eligibility: finalist}
+      - {rank_from: 51,   rank_to: 100,  usd: 50,    eligibility: finalist}
+      - {rank_from: 101,  rank_to: 200,  usd: 40,    eligibility: finalist}
+      - {rank_from: 201,  rank_to: 468,  usd: 30,    eligibility: finalist}
+      - {rank_from: 469,  rank_to: 936,  usd: 20,    eligibility: semifinals_loser}
+      - {rank_from: 937,  rank_to: 1872, usd: 0,     eligibility: quarterfinals_loser}
+      # Note: quarterfinals losers get $0. No qualifier_round payout.

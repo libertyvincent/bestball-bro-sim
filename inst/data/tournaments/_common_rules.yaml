@@ -1,0 +1,31 @@
+draft_mechanics:
+  type: snake_draft
+  description: "Pick order reverses each round."
+
+lineup_mechanics:
+  type: best_ball_auto_lineup
+  description: "Underdog auto-selects highest-scoring lineup at end of each week."
+
+roster_lock:
+  description: "Rosters immutable after draft. No waivers/trades/substitutions."
+
+advancement_pod_formation:
+  rule: random_no_seeding
+  multi_entry_self_avoidance: true
+
+wildcard_advancement:
+  enabled: true
+  description: "If a round under-fills, highest-scoring non-advancing entries become wildcards regardless of their pod placement."
+
+tie_breaking:
+  advancement_rounds:
+    rule: highest_scoring_player_cascading_then_entry_order
+  finals:
+    rule: split_combined_prize_evenly
+
+adp_pick_blocking:
+  enabled: true
+  description: "Underdog blocks picks too far from ADP. Field simulation should respect this constraint."
+
+slow_draft_clock_progression:
+  description: "Clocks shorten as season approaches; not relevant to projection EV."
