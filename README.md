@@ -203,6 +203,80 @@ The validator flags overlapping tiers **within** a single payout table but **not
 
 Underdog runs a family of Superflex tournaments with the same general 4-stage structure but different field sizes, entry caps, and payouts. We model **one** representative (`frenchie3_superflex_double_entry`) and rely on the extension's closest-match fallback (by field size + entry fee) for unmodeled variants. If a Superflex variant becomes important enough to model explicitly, add a new YAML.
 
+## Field Empirics (Sprint 3b-1) — `R/field_empirics.R`
+
+Layer B foundation. Reads scraped Underdog drafts (captured by the bbbrotk Chrome extension) and produces empirical distributions that Sprint 3b-6's synthetic field model will sample from: per-team position counts, stack patterns, and per-pick-slot ADP distributions. No simulation, no correlations — pure analysis of real picks.
+
+### Inputs
+
+The Chrome-extension scraper writes a single JSON export to:
+
+```
+inst/data/scraped_drafts/udbb-scraper-latest.json
+```
+
+Exports are 5–10 MB each and are git-ignored (`inst/data/scraped_drafts/*.json`). Re-publish empirics whenever a fresh export is dropped in. The current sample is ~37 drafts, mixed across Season / Weekly Winners / Eliminator / Superflex.
+
+### API
+
+```r
+picks  <- load_scraped_drafts()                            # 1 row per pick
+counts <- empirical_position_counts(picks)                 # per-slate position freqs
+stacks <- empirical_stack_patterns(picks)                  # per-team stack signature
+pdists <- empirical_pick_distributions(picks)              # per-pick-slot draftee distribution
+summ   <- drafter_team_summary(picks)                      # 1 row per drafter
+publish_field_empirics()                                   # writes 1 JSON per slate to build/feed/v2/field_empirics/
+```
+
+`load_scraped_drafts()` performs the two-hop join `pick.appearance_id → appearance.player_id → player.{first_name, last_name, position_name, team_id}` against the four slate catalogs hoisted into the export's `unkeyed[]` array. Free agents (`team_id = NULL`) come through as `NA` and are excluded from stack-pattern joins; they still count for position counts. Non-completed drafts (`draft_state != "completed"`) are skipped with a printed count.
+
+The empirics filter to **QB/RB/WR/TE only** — Underdog's player catalog includes a handful of `CB`/`FB` rows that occasionally get drafted, but those four positions are the only ones any slate we model actually starts.
+
+### Tournament-ID namespace caveat
+
+The scraper hoists Underdog's UUID `tournament_id` onto every draft. Sprint 3a's `resolve_round_to_tournament()` returns this repo's internal slug (e.g. `"bbm7"`) — different namespace. We don't cross-check the two in 3b-1. Sprint 3b-7 will add a `resolve_underdog_uuid_to_tournament()` bridge in `tournament_loader.R`.
+
+For the Weekly Winners slate, the scraper hoists the weekly-winner pool's id into the `tournament_id` slot — it is **not** a tournament UUID in the Sprint 3a sense. The empirics treat it as an opaque grouping key, which is fine; just don't pass it to the Sprint 3a tournament loader expecting a match.
+
+### Output schema
+
+`publish_field_empirics()` writes `build/feed/v2/field_empirics/<slate_id>.json` per slate. Local-only for now; CI integration comes when Layer B's daily pipeline lands.
+
+```jsonc
+{
+  "slate_id": "a9c04e81-1ace-4b16-a31d-4c725a47f16f",
+  "computed_at": "2026-05-28T01:23:45Z",
+  "source_export_captured_at": "2026-05-27T22:43:46.468Z",
+  "n_drafts_sampled": 20,
+  "n_teams_sampled": 240,
+  "n_tournament_unique": 5,
+  "by_event_type": {
+    "tournament": {"n_drafts": 20, "n_teams": 240}
+  },
+  "position_counts": {
+    "QB": {"1": 3, "2": 98, "3": 133, "4": 6},
+    "RB": {"4": 17, "5": 121, "6": 90, "7": 10, "8": 1, "9": 1},
+    "WR": {"4": 1, "5": 5, "6": 27, "7": 133, "8": 62, "9": 10, "10": 2},
+    "TE": {"1": 1, "2": 78, "3": 151, "4": 10}
+  },
+  "stack_patterns": {
+    "mean_max_team_stack_depth": 3.05,
+    "qb_stack_2plus_rate": 0.912,
+    "qb_stack_3plus_rate": 0.562,
+    "qb_stack_4plus_rate": 0.083,
+    "mean_n_team_stacks_3plus": 1.21
+  },
+  "pick_distributions": [
+    {"pick_overall": 1, "player_id": "...", "first_name": "Bijan",
+     "last_name": "Robinson", "position_name": "RB",
+     "n_times_drafted": 9, "mean_adp_at_pick": 1.5, "sd_adp_at_pick": 0.0},
+    ...
+  ]
+}
+```
+
+QB-stack columns count the QB itself: `qb_stack_2plus` = QB + 1 PC, `qb_stack_3plus` = QB + 2 PCs, etc. "PC" means WR or TE on the same NFL team as the QB. Playoff game stacks (drafter rostered both sides of a Week 15–17 NFL game) need schedule data and are deferred to Sprint 3b-6.
+
 ## Install (dev)
 
 ```r
