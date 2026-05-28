@@ -41,5 +41,8 @@ Thumbs.db
 inst/adp_snapshots/
 .Renviron
 
+# Scraped Underdog draft exports (5-10 MB each, local-only inputs for field empirics)
+inst/data/scraped_drafts/*.json
+
 # Claude Code per-user settings
 .claude/settings.local.json
