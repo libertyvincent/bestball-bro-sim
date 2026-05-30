@@ -34,7 +34,9 @@ load_tournaments <- function(dir_path = NULL, slates_manifest_path = NULL) {
   slates_manifest <- yaml::read_yaml(slates_manifest_path)
 
   all_yaml <- list.files(dir_path, pattern = "\\.ya?ml$", full.names = TRUE)
-  tnmt_files <- all_yaml[basename(all_yaml) != "_common_rules.yaml"]
+  # Skip any file whose basename starts with `_` -- reserved for non-tournament
+  # records like `_common_rules.yaml` and `_generator_input.yaml`.
+  tnmt_files <- all_yaml[!startsWith(basename(all_yaml), "_")]
 
   out <- list()
   for (f in tnmt_files) {
@@ -161,11 +163,14 @@ resolve_round_to_tournament <- function(round_id, ...) {
         "Stage {.val {stage$id}} of {.val {tnmt$tournament_id}} missing {.field underdog_round_id}{ctx}."
       )
     }
-    if (identical(rid, "TBD") && !is_weekly_pools) {
+    if (identical(rid, "TBD") && !is_weekly_pools && !isTRUE(tnmt$auto_generated)) {
       cli::cli_abort(c(
         "Stage {.val {stage$id}} of {.val {tnmt$tournament_id}} has {.val TBD} \\
          underdog_round_id, but tournament is not {.field independent_weekly_pools}{ctx}.",
-        i = "Populate the round ID from Underdog's API response."
+        i = "Populate the round ID from Underdog's API response, or mark the \\
+             tournament {.field auto_generated: true} if it was produced by \\
+             [generate_tournament_config()] while waiting for Underdog to \\
+             publish the round IDs."
       ))
     }
   }
