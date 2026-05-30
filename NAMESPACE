@@ -2,8 +2,10 @@
 
 export(apply_adjustments)
 export(compute_fantasy_points)
+export(compute_field_targets)
 export(default_corr_params)
 export(generate_all_tournament_configs)
+export(generate_field)
 export(generate_projections)
 export(generate_tournament_config)
 export(load_scoring_config)
