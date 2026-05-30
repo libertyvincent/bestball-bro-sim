@@ -134,6 +134,11 @@ load_slate_lineup_spec <- function(slate_id) {
 # ---- internals --------------------------------------------------------------
 
 #' Compute the optimal lineup total per sim for one week.
+#'
+#' Hot path: avoid per-column sorts (apply() over 10K columns of small
+#' vectors is dominated by R dispatch overhead). Instead, fetch only the
+#' specific order statistics we need via [matrixStats::colOrderStats()]
+#' -- a single linearized C call per (position, rank).
 #' @keywords internal
 .week_total <- function(M, positions, lineup_spec, n_sims) {
   slots <- lineup_spec$slots
@@ -142,64 +147,87 @@ load_slate_lineup_spec <- function(slate_id) {
   multi_slots <- Filter(function(s) !(length(s$eligible) == 1L &&
                                       s$eligible == s$pos), slots)
 
-  # Per-position sorted-descending score matrices, and per-position
-  # "rest" matrices (rows beyond what the pure slot consumes).
   positions_in_play <- unique(c(
     vapply(pure_slots, `[[`, character(1), "pos"),
     unlist(lapply(multi_slots, `[[`, "eligible"))
   ))
-  pos_state <- list()
+  pos_mats <- list()
   for (p in positions_in_play) {
     pids <- names(positions)[positions == p]
     pids <- intersect(pids, rownames(M))
-    if (length(pids) == 0L) {
-      sorted <- matrix(0, nrow = 0L, ncol = n_sims)
+    pos_mats[[p]] <- if (length(pids) == 0L) {
+      matrix(0, nrow = 0L, ncol = n_sims)
     } else {
-      sub <- M[pids, , drop = FALSE]
-      sorted <- if (nrow(sub) == 1L) {
-        sub
-      } else {
-        apply(sub, 2L, sort, decreasing = TRUE, method = "quick")
-      }
+      M[pids, , drop = FALSE]
     }
-    pos_state[[p]] <- list(sorted = sorted, consumed = 0L)
   }
 
+  consumed <- stats::setNames(integer(length(positions_in_play)),
+                              positions_in_play)
   total <- numeric(n_sims)
   for (s in pure_slots) {
     p <- s$pos
-    sorted <- pos_state[[p]]$sorted
-    take <- min(s$n, nrow(sorted))
+    Mp <- pos_mats[[p]]
+    take <- min(s$n, nrow(Mp))
     if (take > 0L) {
-      total <- total +
-        colSums(sorted[seq_len(take), , drop = FALSE])
+      total <- total + .top_k_sum(Mp, take)
     }
-    pos_state[[p]]$consumed <- pos_state[[p]]$consumed + s$n
+    consumed[p] <- consumed[p] + s$n
   }
 
   if (length(multi_slots) == 0L) {
     return(total)
   }
+  total + .multi_slot_contribution(multi_slots, pos_mats, consumed, n_sims)
+}
 
-  # Apply the closed-form for the two specs in 3b-3 scope.
-  total + .multi_slot_contribution(multi_slots, pos_state, n_sims)
+#' Sum of the top-K order statistics per column.
+#'
+#' For small K (1, 2, 3), K separate [matrixStats::colOrderStats()] calls
+#' beat a full sort: each call is a single linearized C-level partial
+#' selection, no per-column R dispatch.
+#' @keywords internal
+.top_k_sum <- function(M, k) {
+  nr <- nrow(M)
+  if (nr == 0L || k <= 0L) return(rep(0, ncol(M)))
+  k <- min(k, nr)
+  if (nr == 1L) return(M[1L, ])  # colOrderStats requires nrow >= 2
+  s <- rep(0, ncol(M))
+  for (i in seq_len(k)) {
+    s <- s + matrixStats::colOrderStats(M, which = nr - i + 1L)
+  }
+  s
+}
+
+#' k-th largest per column, or 0 if `k > nrow(M)`.
+#' @keywords internal
+.kth_largest <- function(M, k) {
+  nr <- nrow(M)
+  if (nr < k || k < 1L) return(rep(0, ncol(M)))
+  if (nr == 1L) return(M[1L, ])
+  matrixStats::colOrderStats(M, which = nr - k + 1L)
 }
 
 #' Closed-form contribution from FLEX (and optionally SFLEX) slots.
 #'
-#' Handles exactly the two cases needed by the slates we ship:
-#' - 1 FLEX{RB,WR,TE}: contributes colMax of combined RB/WR/TE leftovers.
-#' - 1 FLEX{RB,WR,TE} + 1 SFLEX{QB,RB,WR,TE} (Superflex): contributes
-#'   `f1 + pmax(qb2, f2)` where f1/f2 are top-2 of the RB/WR/TE leftover
-#'   pool and qb2 is the 2nd-best QB.
-#'
-#' Errors clearly if the spec falls outside these two cases -- a
-#' 3b-later sprint can generalize.
+#' Identity that lets us skip materializing the leftover pool L:
+#' \preformatted{
+#'   f1 = max over flex-eligible positions p of the (consumed_p + 1)-th
+#'        largest in p's matrix
+#'   For Superflex, f2 = max over the same positions, but using the
+#'        (consumed_p + 2)-th largest for whichever position contributed
+#'        f1 and the (consumed_p + 1)-th largest for the others. Equivalent
+#'        to "after pulling f1 from L, the next-best in L is either the
+#'        (consumed_p + 2)-th in f1's position, or the (consumed_q + 1)-th
+#'        in some other position q."
+#' }
+#' Then `flex_pair = f1 + pmax(qb2, f2)` per the Season/Superflex derivation
+#' in the function docstring.
 #' @keywords internal
-.multi_slot_contribution <- function(multi_slots, pos_state, n_sims) {
+.multi_slot_contribution <- function(multi_slots, pos_mats, consumed, n_sims) {
   flex_pool_positions <- c("RB", "WR", "TE")
-  is_flex   <- function(s) setequal(s$eligible, flex_pool_positions) && s$n == 1L
-  is_sflex  <- function(s) setequal(s$eligible, c("QB", flex_pool_positions)) && s$n == 1L
+  is_flex  <- function(s) setequal(s$eligible, flex_pool_positions) && s$n == 1L
+  is_sflex <- function(s) setequal(s$eligible, c("QB", flex_pool_positions)) && s$n == 1L
 
   has_flex  <- any(vapply(multi_slots, is_flex,  logical(1)))
   has_sflex <- any(vapply(multi_slots, is_sflex, logical(1)))
@@ -213,36 +241,34 @@ load_slate_lineup_spec <- function(slate_id) {
     ))
   }
 
-  L_rows <- lapply(flex_pool_positions, function(p) {
-    st <- pos_state[[p]]
-    if (is.null(st)) return(matrix(0, nrow = 0L, ncol = n_sims))
-    consumed <- st$consumed
-    sorted <- st$sorted
-    if (consumed >= nrow(sorted)) {
-      matrix(0, nrow = 0L, ncol = n_sims)
-    } else {
-      sorted[(consumed + 1L):nrow(sorted), , drop = FALSE]
-    }
-  })
-  L <- do.call(rbind, L_rows)
-  L_sorted <- if (nrow(L) <= 1L) L else apply(L, 2L, sort,
-                                              decreasing = TRUE,
-                                              method = "quick")
-  f1 <- if (nrow(L_sorted) >= 1L) L_sorted[1L, ] else rep(0, n_sims)
+  firsts <- vapply(flex_pool_positions, function(p) {
+    Mp <- pos_mats[[p]]
+    if (is.null(Mp)) return(rep(0, n_sims))
+    .kth_largest(Mp, (consumed[p] %||% 0L) + 1L)
+  }, numeric(n_sims))
+  # `firsts` is now [n_sims x 3]; column j == best leftover from position j.
+  if (!is.matrix(firsts)) firsts <- matrix(firsts, nrow = n_sims)
+  f1 <- matrixStats::rowMaxs(firsts)
 
   if (!has_sflex) {
     return(f1)  # Season FLEX
   }
 
-  f2 <- if (nrow(L_sorted) >= 2L) L_sorted[2L, ] else rep(0, n_sims)
+  seconds <- vapply(flex_pool_positions, function(p) {
+    Mp <- pos_mats[[p]]
+    if (is.null(Mp)) return(rep(0, n_sims))
+    .kth_largest(Mp, (consumed[p] %||% 0L) + 2L)
+  }, numeric(n_sims))
+  if (!is.matrix(seconds)) seconds <- matrix(seconds, nrow = n_sims)
 
-  qb_state <- pos_state[["QB"]]
-  qb2 <- if (!is.null(qb_state) &&
-             nrow(qb_state$sorted) >= qb_state$consumed + 1L) {
-    qb_state$sorted[qb_state$consumed + 1L, ]
-  } else {
-    rep(0, n_sims)
-  }
+  f1_idx <- max.col(firsts, ties.method = "first")
+  firsts_after <- firsts
+  swap_idx <- cbind(seq_len(n_sims), f1_idx)
+  firsts_after[swap_idx] <- seconds[swap_idx]
+  f2 <- matrixStats::rowMaxs(firsts_after)
+
+  qb_consumed <- consumed[["QB"]] %||% 0L
+  qb2 <- .kth_largest(pos_mats[["QB"]], qb_consumed + 1L)
 
   f1 + pmax(qb2, f2)
 }
