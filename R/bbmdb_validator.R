@@ -464,28 +464,26 @@ validate_xadv_against_bbmdb <- function(bbmdb_path,
 #' Underdog exposes two distinct UUIDs for the same player: the slate
 #' CSV (used by the blender feed) uses one; the live
 #' `/v1/slates/<sid>/players` endpoint (used by the scraper) uses
-#' another. The bridge keys on normalized (first_name, last_name,
-#' position). Ambiguous matches (same name+position across multiple
-#' candidates -- e.g. the famous Mike Williamses) are dropped from the
-#' bridge rather than guessed at; the validator marks affected entries
-#' as `no_feed_overlap` if too few players make it through.
+#' another. The bridge keys on [normalize_player_key()] -- the
+#' centralized normalizer handles generational suffixes (`Jr` / `III`),
+#' multi-token last names (`St. Brown`), unicode apostrophes /
+#' hyphens, and the CB->WR fantasy-position remap that turns Travis
+#' Hunter from "scraper-says-defender" into the WR slot he actually
+#' starts at. Ambiguous matches (same key across multiple feed
+#' candidates) are dropped; the validator marks affected entries as
+#' `no_feed_overlap` if too few players make it through.
 #' @keywords internal
 .scraper_to_feed_id_map <- function(picks, feed) {
-  # Index feed by (norm_name, position). One feed player may have only
-  # `name` (combined); split into first/last for parity with scraper.
-  feed_index <- list()
-  for (uid in names(feed$players)) {
-    pl <- feed$players[[uid]]
-    nm <- pl$name %||% NA_character_
-    pos <- pl$position %||% NA_character_
-    if (is.na(nm) || is.na(pos)) next
-    parts <- strsplit(nm, "\\s+", perl = TRUE)[[1]]
-    if (length(parts) < 2L) next
-    first <- .normalize_name(parts[1L])
-    last  <- .normalize_name(parts[length(parts)])
-    key <- paste(first, last, pos, sep = "|")
-    feed_index[[key]] <- c(feed_index[[key]], uid)
-  }
+  feed_ids   <- names(feed$players)
+  feed_names <- vapply(feed_ids,
+                       function(uid) feed$players[[uid]]$name %||% NA_character_,
+                       character(1))
+  feed_pos   <- vapply(feed_ids,
+                       function(uid) feed$players[[uid]]$position %||% NA_character_,
+                       character(1))
+  feed_keys  <- normalize_player_key(feed_names, feed_pos)
+  feed_index <- split(feed_ids, feed_keys)
+
   uniq_picks <- unique(picks[, c("underdog_id", "first_name", "last_name",
                                   "position_name")])
   uniq_picks <- uniq_picks[!is.na(uniq_picks$underdog_id) &
@@ -493,27 +491,21 @@ validate_xadv_against_bbmdb <- function(bbmdb_path,
                             !is.na(uniq_picks$last_name) &
                             !is.na(uniq_picks$position_name), ,
                            drop = FALSE]
+  pick_keys <- normalize_player_key(
+    paste(uniq_picks$first_name, uniq_picks$last_name),
+    uniq_picks$position_name
+  )
+
   bridge <- character(0)
-  for (i in seq_len(nrow(uniq_picks))) {
-    r <- uniq_picks[i, ]
-    first <- .normalize_name(r$first_name)
-    last  <- .normalize_name(r$last_name)
-    key <- paste(first, last, r$position_name, sep = "|")
-    cand <- feed_index[[key]]
+  for (i in seq_along(pick_keys)) {
+    k <- pick_keys[i]
+    if (is.na(k)) next
+    cand <- feed_index[[k]]
     if (!is.null(cand) && length(cand) == 1L) {
-      bridge[[r$underdog_id]] <- cand
+      bridge[[uniq_picks$underdog_id[i]]] <- cand
     }
   }
   bridge
-}
-
-#' Normalize a player name fragment for matching.
-#' @keywords internal
-.normalize_name <- function(s) {
-  s <- tolower(trimws(as.character(s)))
-  s <- gsub("[[:punct:]]", "", s)
-  s <- gsub("\\s+", "", s)
-  s
 }
 
 #' @keywords internal

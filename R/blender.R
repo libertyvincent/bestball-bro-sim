@@ -341,61 +341,10 @@ blend_slate <- function(slate_id,
 # ============================================================================
 # Normalization helpers
 # ============================================================================
-
-#' Player-name aliases used by `.normalize_name()`
-#'
-#' Keys are the *non-canonical* form (lowercased, after period strip
-#' and suffix strip); values are the canonical form (as the slate CSV
-#' carries it, also post-suffix-strip). Applied AFTER the regex-driven
-#' normalization steps in `.normalize_name()`. Add entries here when
-#' the per-slate audit file at `build/blender_audit_<slate_id>.txt`
-#' surfaces a player who shows up in ETR/LegUp but not Clay because
-#' Clay's PDF lists them under a different name.
-#'
-#' Conventions:
-#'   - Lowercase
-#'   - No periods
-#'   - No trailing generational suffix (it's already stripped by the
-#'     time the alias map is consulted, so "Ken Walker III" -> "ken walker")
-#'   - Map TO the slate CSV's canonical name, post-normalize
-#'
-#' Document any addition in README.md (Name aliases section).
-#' @keywords internal
-.NAME_ALIASES <- c(
-  "ken walker"     = "kenneth walker",   # Clay says "Ken Walker", slate says "Kenneth Walker"
-  "marquise brown" = "hollywood brown"   # Clay says "Marquise Brown", slate says "Hollywood Brown"
-)
-
-#' Normalize a player name for cross-source matching
-#'
-#' Lowercases, strips periods, normalizes unicode apostrophes/hyphens
-#' to ASCII variants, collapses whitespace, strips a trailing
-#' generational suffix token (II..IX, Jr, Sr -- with or without a
-#' period), and then applies the [.NAME_ALIASES] map for known
-#' canonical-name disagreements between sources and the slate CSV.
-#'
-#' Used only for cross-source matching; the canonical output name
-#' preserves the original suffix and full first name.
-#' @keywords internal
-.normalize_name <- function(x) {
-  if (length(x) == 0L) return(character(0))
-  x <- tolower(x)
-  x <- gsub("[‘’']", "", x, perl = TRUE)   # curly/straight apostrophes
-  x <- gsub("[–—]", "-", x, perl = TRUE)   # en/em-dash -> hyphen
-  x <- gsub("\\.", "", x)                            # A.J. -> AJ; Jr. -> Jr
-  x <- gsub("\\s+", " ", x, perl = TRUE)
-  x <- trimws(x)
-  # Strip trailing generational suffix (after period strip so "Jr." == "jr")
-  x <- gsub("\\s+(ii|iii|iv|v|vi|vii|viii|ix|jr|sr)$", "", x, perl = TRUE)
-  x <- trimws(x)
-  # Alias map for known cross-source canonical-name disagreements.
-  hit <- match(x, names(.NAME_ALIASES))
-  if (any(!is.na(hit))) {
-    fix <- !is.na(hit)
-    x[fix] <- unname(.NAME_ALIASES[hit[fix]])
-  }
-  x
-}
+# `.normalize_name()` and `.NAME_ALIASES` were consolidated into
+# R/player_match.R so the blender's Clay join and the scraper -> feed
+# bridge share one canonical implementation. The blender still calls
+# `.normalize_name()` here; it's the same function, just in a shared file.
 
 #' Normalize a team abbreviation to nflverse convention
 #'
