@@ -267,7 +267,7 @@ For the Weekly Winners slate, the scraper hoists the weekly-winner pool's id int
     "mean_n_team_stacks_3plus": 1.21
   },
   "pick_distributions": [
-    {"pick_overall": 1, "player_id": "...", "first_name": "Bijan",
+    {"pick_overall": 1, "underdog_id": "...", "first_name": "Bijan",
      "last_name": "Robinson", "position_name": "RB",
      "n_times_drafted": 9, "mean_adp_at_pick": 1.5, "sd_adp_at_pick": 0.0},
     ...

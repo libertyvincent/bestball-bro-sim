@@ -93,6 +93,10 @@ test_that("load_scraped_drafts produces non-zero rows for the fixture slate", {
   expect_setequal(unique(picks$slate_id), "slate-A")
   expect_setequal(unique(picks$drafter_user_id), c("U1", "U2"))
   expect_true(all(c("first_name", "last_name", "position_name") %in% colnames(picks)))
+  # Standardized join key across the sim repo (Layer A / 3b-2 / 3b-3+) is
+  # `underdog_id`. The legacy column name `player_id` must not reappear.
+  expect_true("underdog_id" %in% colnames(picks))
+  expect_false("player_id" %in% colnames(picks))
 })
 
 test_that("load_scraped_drafts joins appearance_id -> player metadata", {
@@ -111,7 +115,7 @@ test_that("load_scraped_drafts joins appearance_id -> player metadata", {
 test_that("load_scraped_drafts emits NA team_id for free agents", {
   p <- write_mini_export(make_mini_export())
   picks <- load_scraped_drafts(p)
-  fa <- picks[picks$player_id == "p-fa1", ]
+  fa <- picks[picks$underdog_id == "p-fa1", ]
   expect_equal(nrow(fa), 1L)
   expect_true(is.na(fa$team_id))
 })

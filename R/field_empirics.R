@@ -41,9 +41,13 @@
 #' @return A tibble with one row per pick and the columns:
 #'   `draft_id, draft_state, slate_id, tournament_id, tournament_round_id,
 #'   tournament_title, event_type, drafter_slot, drafter_user_id,
-#'   draft_entry_id, round, pick_overall, appearance_id, player_id,
+#'   draft_entry_id, round, pick_overall, appearance_id, underdog_id,
 #'   first_name, last_name, position_name, team_id, projection_adp_at_pick,
 #'   projection_points, actual_points`.
+#'   The `underdog_id` column carries the Underdog player UUID (the value
+#'   stored on `appearance.player_id` upstream); we standardize on the
+#'   `underdog_id` name across the sim repo to match Layer A's draws and
+#'   3b-2's correlated output.
 #'   Attributes:
 #'     - `exported_at` (chr scalar from the export header)
 #'     - `n_drafts_input` (total drafts in the export, including skipped)
@@ -220,7 +224,7 @@ load_scraped_drafts <- function(
   n <- length(picks)
   draft_entry_id          <- character(n)
   appearance_id           <- character(n)
-  player_id               <- character(n)
+  underdog_id             <- character(n)
   first_name              <- character(n)
   last_name               <- character(n)
   position_name           <- character(n)
@@ -242,7 +246,7 @@ load_scraped_drafts <- function(
 
     draft_entry_id[i]         <- eid
     appearance_id[i]          <- aid
-    player_id[i]              <- pid
+    underdog_id[i]            <- pid
     first_name[i]             <- if (is.null(pm)) NA_character_ else pm$first_name
     last_name[i]              <- if (is.null(pm)) NA_character_ else pm$last_name
     position_name[i]          <- if (is.null(pm)) NA_character_ else pm$position_name
@@ -275,7 +279,7 @@ load_scraped_drafts <- function(
     round                  = round,
     pick_overall           = pick_overall,
     appearance_id          = appearance_id,
-    player_id              = player_id,
+    underdog_id            = underdog_id,
     first_name             = first_name,
     last_name              = last_name,
     position_name          = position_name,
@@ -439,7 +443,7 @@ empirical_stack_patterns <- function(picks, stratify_by = c("slate_id")) {
 #'
 #' @param picks Output of [load_scraped_drafts()].
 #' @param stratify_by Grouping columns. Default `c("slate_id")`.
-#' @return tibble: all `stratify_by` cols + `pick_overall, player_id,
+#' @return tibble: all `stratify_by` cols + `pick_overall, underdog_id,
 #'   first_name, last_name, position_name, n_times_drafted,
 #'   mean_adp_at_pick, sd_adp_at_pick`.
 #' @export
@@ -447,7 +451,7 @@ empirical_pick_distributions <- function(picks, stratify_by = c("slate_id")) {
   .check_picks(picks)
   .check_stratify_cols(picks, stratify_by)
 
-  group_cols <- unique(c(stratify_by, "pick_overall", "player_id",
+  group_cols <- unique(c(stratify_by, "pick_overall", "underdog_id",
                          "first_name", "last_name", "position_name"))
   out <- as.data.frame(
     dplyr::summarise(
@@ -554,7 +558,7 @@ drafter_team_summary <- function(picks) {
 #'     "mean_n_team_stacks_3plus": 1.21
 #'   },
 #'   "pick_distributions": [
-#'     {"pick_overall": 1, "player_id": "...", "first_name": "Jahmyr",
+#'     {"pick_overall": 1, "underdog_id": "...", "first_name": "Jahmyr",
 #'      "last_name": "Gibbs", "position_name": "RB",
 #'      "n_times_drafted": 4, "mean_adp_at_pick": 1.7, "sd_adp_at_pick": 0.2},
 #'     ...
@@ -618,7 +622,7 @@ publish_field_empirics <- function(
     )
 
     pd_slate <- pick_dists[pick_dists$slate_id == sid, , drop = FALSE]
-    pd_slate <- pd_slate[, c("pick_overall", "player_id", "first_name",
+    pd_slate <- pd_slate[, c("pick_overall", "underdog_id", "first_name",
                              "last_name", "position_name", "n_times_drafted",
                              "mean_adp_at_pick", "sd_adp_at_pick")]
 
@@ -663,7 +667,7 @@ publish_field_empirics <- function(
     round                  = integer(0),
     pick_overall           = integer(0),
     appearance_id          = character(0),
-    player_id              = character(0),
+    underdog_id            = character(0),
     first_name             = character(0),
     last_name              = character(0),
     position_name          = character(0),
