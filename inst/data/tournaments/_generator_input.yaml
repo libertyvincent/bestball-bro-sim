@@ -1,0 +1,87 @@
+# Tournament-config generator input.
+#
+# Each row here gets expanded into a canonical inst/data/tournaments/<id>.yaml
+# by generate_all_tournament_configs(). Adding a tournament = one row.
+#
+# Scope: the 4-stage Season-slate shape (qualifier on weeks 1-14, QF/SF/Final
+# on weeks 15/16/17). Eliminator-format tournaments (17-round H2H) and
+# Weekly-Winners (independent weekly pools) use different structures and stay
+# hand-written under inst/data/tournaments/.
+#
+# `stages` is the advance/pod shorthand for stages 1-3; final_seats is the
+# championship single-pod size. The generator computes total_field_size and
+# every stage's seats_entering by walking the math backward and aborts if it
+# doesn't divide evenly.
+#
+# `write_to_disk: false` keeps the generator from clobbering a richer
+# hand-written canonical file (e.g. BBM7's tiered payouts). The test suite
+# still uses the generated in-memory list to round-trip-check the schema.
+
+tournaments:
+  # ---- Best Ball Mania VII (round-trip target only; hand-written file kept) ----
+  - id: bbm7
+    display_name: "Best Ball Mania VII"
+    underdog_tournament_id: deb0e69e-d357-4f7e-affa-2d5b8a726da8
+    slate_id: nfl_2026_season
+    stages: ["2/12", "1/14", "1/12"]
+    final_seats: 667
+    entry_fee_usd: 25
+    description: "Our Flagship Contest - $2M to first!"
+    rules_url: https://app.underdogfantasy.com/rules/tournaments/best-ball-mania-vii
+    image_url: https://storage.googleapis.com/underdog-inc/assets/tournaments/BBMVII-OverDark.png
+    cutoff_at: "2026-09-09T22:26:00Z"
+    rake_pct: 0.108
+    write_to_disk: false
+
+  # ---- The Puppy (Season, 4-stage advancement) ----
+  - id: puppy
+    display_name: "The Puppy"
+    underdog_tournament_id: b42dca9a-7a0c-4c32-963d-a0ddfe179e0a
+    slate_id: nfl_2026_season
+    stages: ["2/12", "1/10", "1/6"]
+    final_seats: 625
+    entry_fee_usd: 25
+    description: "Wen Puppy? - $100k to first!"
+    rules_url: https://app.underdogfantasy.com/rules/tournaments/the-puppy-2026
+    image_url: https://storage.googleapis.com/underdog-inc/assets/tournaments/the-puppy.png
+    cutoff_at: "2026-09-09T22:26:00Z"
+
+  # ---- The Dachshund (Season, 4-stage advancement) ----
+  - id: dachshund
+    display_name: "The Dachshund"
+    underdog_tournament_id: 1f35c88b-e5c4-4b8c-b42a-db74f55d7a18
+    slate_id: nfl_2026_season
+    stages: ["2/12", "1/5", "1/6"]
+    final_seats: 156
+    entry_fee_usd: 10
+
+  # ---- The Mini Golden (Season, 4-stage advancement) ----
+  - id: mini_golden
+    display_name: "The Mini Golden"
+    underdog_tournament_id: 49d2b4fe-fb5c-42a4-bc6a-e9b18547535a
+    slate_id: nfl_2026_season
+    stages: ["4/12", "2/5", "1/4"]
+    final_seats: 376
+    entry_fee_usd: 100
+
+  # ---- The Frenchie 3 (Season 1-QB, distinct from The Frenchie 3 but Superflex) ----
+  # The scraper has drafts under tournament_id f862a116 with slate a9c04e81 =
+  # nfl_2026_season, confirming this is the Season variant. The Superflex
+  # variant lives in frenchie3_superflex.yaml (UUID e6b02a45, NOT mislabeled).
+  - id: frenchie3
+    display_name: "The Frenchie 3"
+    underdog_tournament_id: f862a116-a69f-4db7-aeaf-29155b579be7
+    slate_id: nfl_2026_season
+    stages: ["4/12", "1/2", "1/2"]
+    final_seats: 468
+    entry_fee_usd: 10
+
+  # ---- TODO (scraper present but shorthand not yet user-confirmed) ----
+  # - The Frenchie Eliminator (UUID 88fcfddf-e1dd-4691-99db-98806779ebc7) is in
+  #   the scraper drafts on slate 0ee05b31 (nfl_2026_eliminator) but the
+  #   /v1/tournaments/<uuid> endpoint wasn't captured, so no auto-derivable
+  #   shorthand. Add a row here once Underdog's "Round Advancement: ..." string
+  #   is read off the rules page.
+  # - The Field General (UUID 08bddf11) is on slate 11300882 (nfl_2026_superflex).
+  #   The 4-stage generator emits the Season FLEX-only lineup rule today; needs
+  #   Superflex extension (SFLEX slot + 2-WR composition) before generating.
