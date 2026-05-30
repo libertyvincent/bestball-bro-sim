@@ -6,7 +6,8 @@
 #' advancement), Weekly Winners (17 independent stages, no advancement),
 #' and any superflex / Big Board / Puppy variant via the tournament config.
 #'
-#' @param tournament_cfg A `bbbro_tournament` from `load_tournament_config()`.
+#' @param tournament_cfg A `bbbro_tournament_def` from [load_tournament()]
+#'   (canonical Sprint 3a loader; reads `inst/data/tournaments/`).
 #' @param sim_draws Output of `run_season_sims()`.
 #' @param rosters Optional roster matrix to score; if NULL, this function
 #'   only computes the per-(stage, week) thresholds needed by callers.
@@ -18,7 +19,7 @@
 run_stage_engine <- function(tournament_cfg, sim_draws, rosters = NULL) {
   cli::cli_abort(c(
     "Not yet implemented.",
-    i = "See LAYER_B.md — the stage engine consumes the schema in tournament_config.R."
+    i = "See LAYER_B.md and the canonical tournament configs in inst/data/tournaments/."
   ))
 }
 
@@ -32,7 +33,7 @@ run_stage_engine <- function(tournament_cfg, sim_draws, rosters = NULL) {
 #' the extension's live recommendation engine in `dataJoin.js`. See
 #' FEED_SPEC.md for the exact output shape.
 #'
-#' @param tournament_cfg A `bbbro_tournament` object.
+#' @param tournament_cfg A `bbbro_tournament_def` object from [load_tournament()].
 #' @param projections Output of `generate_projections()`.
 #' @param sim_draws Output of `run_season_sims()`.
 #' @param n_mock_drafts Number of mock drafts to simulate. Default 10000.
@@ -57,7 +58,7 @@ precompute_building_blocks <- function(tournament_cfg,
 #' Implements the field model (LAYER_B.md DECISION 1). v1 uses ADP +
 #' roster construction priors calibrated from BBM3–6 historical pick data.
 #'
-#' @param tournament_cfg A `bbbro_tournament` object.
+#' @param tournament_cfg A `bbbro_tournament_def` object from [load_tournament()].
 #' @param projections Projection table for ADP and player universe.
 #' @param n_drafts Number of mock drafts to run.
 #' @return A long tibble of (draft_id, pick_number, drafter_id, player_id).

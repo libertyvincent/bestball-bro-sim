@@ -29,7 +29,7 @@
 #' Returns "" if the file cannot be found (matching system.file()'s convention).
 #'
 #' @param subdir Subdirectory under `inst/`, e.g. `"tournaments"` or `"scoring"`.
-#' @param filename Filename within `subdir`, e.g. `"bbm_2026.yaml"`.
+#' @param filename Filename within `subdir`, e.g. `"bbm7.yaml"`.
 #' @keywords internal
 .inst_path <- function(subdir, filename) {
   pkg_path <- system.file(subdir, filename, package = "bestballBroSim")
