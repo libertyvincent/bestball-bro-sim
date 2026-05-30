@@ -11,6 +11,16 @@ slates:
       RB: 9
       WR: 10
       TE: 5
+    # YAML quirk: the unquoted key `n` parses as the boolean FALSE under
+    # YAML 1.1, which is what the `yaml` R package implements. We quote
+    # `"n"` so it survives as the string key the loader expects.
+    starting_lineup:
+      slots:
+        - { pos: QB,   "n": 1 }
+        - { pos: RB,   "n": 2 }
+        - { pos: WR,   "n": 3 }
+        - { pos: TE,   "n": 1 }
+        - { pos: FLEX, "n": 1, eligible: [RB, WR, TE] }
   nfl_2026_eliminator:
     underdog_slate_id: 0ee05b31-f904-4e6e-985b-42f290e3aa3a
     display_name: NFL 2026 Eliminator Season
@@ -23,6 +33,13 @@ slates:
       RB: 9
       WR: 10
       TE: 5
+    starting_lineup:
+      slots:
+        - { pos: QB,   "n": 1 }
+        - { pos: RB,   "n": 2 }
+        - { pos: WR,   "n": 3 }
+        - { pos: TE,   "n": 1 }
+        - { pos: FLEX, "n": 1, eligible: [RB, WR, TE] }
   nfl_2026_weekly_winners:
     underdog_slate_id: d9fd5f58-393f-400c-a010-3bf79b822b48
     display_name: NFL 2026 Weekly Winners Season
@@ -35,6 +52,13 @@ slates:
       RB: 9
       WR: 10
       TE: 5
+    starting_lineup:
+      slots:
+        - { pos: QB,   "n": 1 }
+        - { pos: RB,   "n": 2 }
+        - { pos: WR,   "n": 3 }
+        - { pos: TE,   "n": 1 }
+        - { pos: FLEX, "n": 1, eligible: [RB, WR, TE] }
   nfl_2026_superflex:
     underdog_slate_id: 11300882-a76f-4e12-8a5e-1a6b4c513794
     display_name: NFL 2026 Superflex Season
@@ -47,3 +71,14 @@ slates:
       RB: 10
       WR: 12
       TE: 5
+    # Superflex starting lineup: 2 WR (not 3 like Season-family slates),
+    # plus a SFLEX slot that adds QB to the FLEX-eligible pool. Matches
+    # the frenchie3_superflex.yaml tournament definition.
+    starting_lineup:
+      slots:
+        - { pos: QB,    "n": 1 }
+        - { pos: RB,    "n": 2 }
+        - { pos: WR,    "n": 2 }
+        - { pos: TE,    "n": 1 }
+        - { pos: FLEX,  "n": 1, eligible: [RB, WR, TE] }
+        - { pos: SFLEX, "n": 1, eligible: [QB, RB, WR, TE] }
