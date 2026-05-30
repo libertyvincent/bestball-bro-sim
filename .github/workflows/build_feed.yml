@@ -45,7 +45,11 @@ jobs:
             any::devtools
 
       - name: Verify tournament configs parse
-        run: Rscript -e 'devtools::load_all(); invisible(lapply(list_tournaments(), load_tournament_config))'
+        # load_tournaments() loads every YAML under inst/data/tournaments/
+        # and validates each via .validate_tournament(), so this is the
+        # one-shot replacement for the old list_tournaments() +
+        # load_tournament_config() pair.
+        run: Rscript -e 'devtools::load_all(); invisible(load_tournaments())'
 
       - name: Create build directories
         # Primes the feed tree so publish_* writes into an existing path.

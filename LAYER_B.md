@@ -42,7 +42,10 @@ Each tournament is a YAML config the engine ingests. The schema centers on **sta
 ### Example: Best Ball Mania
 
 ```yaml
-# inst/tournaments/bbm_2026.yaml
+# Historical example (pre-Sprint 3a stage-abstraction schema). The
+# canonical configs now live at inst/data/tournaments/<id>.yaml with the
+# richer Sprint 3a schema (tournament_id, underdog_tournament_id,
+# inherits_common_rules, tiered payouts, etc.) -- see bbm7.yaml.
 id: bbm_2026
 name: "Best Ball Mania VII"
 entry_fee: 25
@@ -93,7 +96,8 @@ stages:
 Same engine, different stages — no advancement, weekly payouts:
 
 ```yaml
-# inst/tournaments/weekly_winners_2026.yaml
+# Historical example -- canonical config now at
+# inst/data/tournaments/weekly_winners_2026.yaml under the Sprint 3a schema.
 id: weekly_winners_2026
 name: "Weekly Winners NFL 2026"
 scoring: half_ppr_underdog
@@ -309,9 +313,10 @@ bestball-bro-sim/
 │   ├── payout_ev.R                  # advance prob → $ conversion
 │   └── publish.R                    # extended to write building_blocks.json
 ├── inst/
-│   ├── tournaments/
-│   │   ├── bbm_2026.yaml
-│   │   └── best_bowl_mania_2026.yaml # deferred
+│   ├── data/
+│   │   └── tournaments/                # canonical Sprint 3a configs
+│   │       ├── bbm7.yaml
+│   │       └── best_bowl_mania_2026.yaml # deferred
 │   └── ...
 ```
 

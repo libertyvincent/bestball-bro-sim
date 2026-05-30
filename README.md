@@ -20,7 +20,7 @@ Read these before changing anything structural.
 
 ## Status
 
-**Pre-alpha.** Working today: tournament config loading + validation (`R/tournament_config.R` + tests). Valid YAML configs for BBM and Weekly Winners under `inst/tournaments/`. Everything else is stubbed pending implementation per LAYER_A.md / LAYER_B.md decisions.
+**Pre-alpha.** Working today: tournament config loading + validation (`R/tournament_loader.R` + tests). Canonical per-tournament YAML configs live under `inst/data/tournaments/` (Sprint 3a schema). Everything else is stubbed pending implementation per LAYER_A.md / LAYER_B.md decisions.
 
 Implementation milestones in roughly the right order:
 
@@ -38,7 +38,7 @@ Implementation milestones in roughly the right order:
 
 ```
 R/
-  tournament_config.R    # YAML loader + validator (WORKING)
+  tournament_loader.R    # YAML loader + validator (WORKING)
   data_pull.R            # nflverse + Underdog ADP loaders (partial)
   projections.R          # Layer A (stub)
   simulate.R             # Monte Carlo season sim (stub)
@@ -46,9 +46,14 @@ R/
   publish.R              # JSON + parquet feed writer (stub)
 
 inst/
-  tournaments/           # Per-tournament stage configs
-    bbm_2026.yaml
-    weekly_winners_2026.yaml
+  data/
+    tournaments/         # Per-tournament configs (Sprint 3a schema)
+      _common_rules.yaml
+      bbm7.yaml
+      eliminator_2026.yaml
+      frenchie3_superflex.yaml
+      weekly_winners_2026.yaml
+    slates/              # Per-slate manifest + CSV universes
   scoring/               # Per-scoring-system definitions
     half_ppr_underdog.yaml
   adjustments/           # User "knowing ball" overrides
@@ -286,8 +291,8 @@ remotes::install_deps(dependencies = TRUE)
 devtools::load_all()
 
 # Try the working piece
-bbm <- load_tournament_config("bbm_2026")
-ww  <- load_tournament_config("weekly_winners_2026")
+bbm <- load_tournament("bbm7")
+ww  <- load_tournament("weekly_winners_2026")
 
 # Run tests
 devtools::test()
