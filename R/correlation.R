@@ -81,16 +81,35 @@ default_corr_params <- list(team = 0.45, game = 0.25, cross = 0.05)
 #'   marginal via its empirical CDF.
 #' @param seed Optional integer RNG seed. `NULL` (default) =
 #'   nondeterministic.
-#' @return A data.frame with the same columns as `layerA_draws`
-#'   (`underdog_id, sim_idx, week, draw_value`) and `n_sims * length(weeks) *
-#'   length(player_ids)` rows.
+#' @param precomputed_marginals Optional output of
+#'   [precompute_layerA_marginals()] -- a `list[player_id][week_str] = sorted
+#'   numeric` cache of Layer A's per-player per-week marginals. When
+#'   provided, this skips the internal sort, which is the main batch
+#'   speedup when 3b-4 / 3b-5 run the sampler over many rosters that share
+#'   the same Layer A slate. Lookups for `(player, week)` pairs missing
+#'   from the cache fall back to zero, matching the no-cache behavior for
+#'   players with no marginal data.
+#' @param output_format `"long"` (default) -- returns the long
+#'   data.frame matching Layer A. `"matrix_list"` -- returns a named list
+#'   keyed by week of `[n_players x n_sims]` matrices with `rownames =
+#'   underdog_id`. The matrix-list form skips a 5M-row data.frame
+#'   round-trip and is the right shape to feed straight into
+#'   [optimize_lineup_totals()]; it's what [simulate_team_season()] uses
+#'   internally.
+#' @return Depending on `output_format`, either a data.frame
+#'   (`underdog_id, sim_idx, week, draw_value`) of `n_sims * length(weeks) *
+#'   length(player_ids)` rows, or a named list of `[n_players x n_sims]`
+#'   matrices.
 #' @export
 sample_correlated_draws <- function(player_ids,
                                     layerA_draws,
                                     schedule,
                                     corr_params = default_corr_params,
                                     n_sims = 10000L,
-                                    seed = NULL) {
+                                    seed = NULL,
+                                    precomputed_marginals = NULL,
+                                    output_format = c("long", "matrix_list")) {
+  output_format <- match.arg(output_format)
   .validate_corr_params(corr_params)
 
   player_ids <- unique(as.character(player_ids))
@@ -122,7 +141,17 @@ sample_correlated_draws <- function(player_ids,
   }
   n_weeks <- length(weeks)
 
-  marginals <- .build_marginals(layerA_draws, player_ids, weeks)
+  marginals <- if (is.null(precomputed_marginals)) {
+    .build_marginals(layerA_draws, player_ids, weeks)
+  } else {
+    missing_pids <- setdiff(player_ids, names(precomputed_marginals))
+    if (length(missing_pids) > 0L) {
+      cli::cli_abort(
+        "`precomputed_marginals` is missing entries for player(s): {missing_pids}"
+      )
+    }
+    precomputed_marginals
+  }
 
   cross <- corr_params$cross
   game  <- corr_params$game
@@ -172,6 +201,23 @@ sample_correlated_draws <- function(player_ids,
       sorted <- marginals[[pid]][[as.character(w)]]
       out_mats[[pid]][, wi] <- .inv_cdf_type7(sorted, U[, j])
     }
+  }
+
+  if (output_format == "matrix_list") {
+    # Per-week [n_players x n_sims] matrix list -- the shape
+    # optimize_lineup_totals() accepts directly. Avoids materializing a
+    # 5M-row data.frame for the in-package compose path.
+    out_list <- vector("list", n_weeks)
+    names(out_list) <- as.character(weeks)
+    for (wi in seq_along(weeks)) {
+      M <- matrix(0, nrow = length(player_ids), ncol = n_sims,
+                  dimnames = list(player_ids, NULL))
+      for (j in seq_along(player_ids)) {
+        M[j, ] <- out_mats[[player_ids[j]]][, wi]
+      }
+      out_list[[wi]] <- M
+    }
+    return(out_list)
   }
 
   chunks <- lapply(player_ids, function(pid) {
@@ -233,6 +279,47 @@ sample_correlated_draws <- function(player_ids,
     cli::cli_abort("`{arg_name}` is missing required column(s): {missing}")
   }
   invisible(TRUE)
+}
+
+#' Pre-sort Layer A draws into per-player per-week marginals
+#'
+#' Sorts each `(underdog_id, week)` group of `layerA_draws$draw_value`
+#' once and returns a nested lookup `list[player_id][week_str] = sorted
+#' numeric`. This is the cache that [sample_correlated_draws()] uses
+#' internally for the empirical inverse-CDF mapping; calling it once on
+#' the full slate's player set and passing the result as
+#' `precomputed_marginals` to many per-roster invocations is the main
+#' batch speedup for 3b-4 / 3b-5 (sort happens once instead of once per
+#' roster).
+#'
+#' @param layerA_draws Long Layer A draws (`underdog_id, sim_idx, week,
+#'   draw_value`).
+#' @param player_ids Optional character vector restricting the cache to a
+#'   subset of players. Defaults to all `underdog_id` values in
+#'   `layerA_draws`.
+#' @param weeks Optional integer vector restricting the cache to a
+#'   subset of weeks. Defaults to all weeks present in `layerA_draws`.
+#' @return A named list of named lists: `out[[player_id]][[week_str]]` is
+#'   a numeric vector sorted ascending. Players or weeks with no draw
+#'   rows produce empty lookups (the inverse-CDF then falls back to 0).
+#' @export
+precompute_layerA_marginals <- function(layerA_draws,
+                                        player_ids = NULL,
+                                        weeks = NULL) {
+  .require_cols(layerA_draws,
+                c("underdog_id", "sim_idx", "week", "draw_value"),
+                "layerA_draws")
+  if (is.null(player_ids)) {
+    player_ids <- sort(unique(as.character(layerA_draws$underdog_id)))
+  } else {
+    player_ids <- unique(as.character(player_ids))
+  }
+  if (is.null(weeks)) {
+    weeks <- sort(unique(as.integer(layerA_draws$week)))
+  } else {
+    weeks <- sort(unique(as.integer(weeks)))
+  }
+  .build_marginals(layerA_draws, player_ids, weeks)
 }
 
 #' Build a `[player][week] -> sorted-numeric` lookup of week-w marginal
