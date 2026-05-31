@@ -78,23 +78,45 @@ cat("Gap: $", round(fp$field_mean_total_ev - expected, 2),
     sep = "")
 cat("Net of $25 entry: $", round(fp$field_mean_total_ev - tcfg$entry_fee_usd, 2), "\n", sep="")
 
-# 2. Per-player attribution for one real scraped BBM7 draft pod.
+# Cache the field artifacts so per-player exploration can be re-run without
+# re-scoring the 10,080-team field.
+saveRDS(list(fp = fp, positions = positions, schedule = schedule,
+             lineup_spec = lineup_spec),
+        file.path(tempdir(), "bbm7_headline_cache.rds"))
+
+# 2. Per-player attribution for one real scraped BBM7 draft pod. Pick a pod
+# with full feed coverage, evaluate every entry, and show the strongest team
+# (a representative eyeball, not a near-empty roster).
 cat("\n=== Per-player EV attribution (one real draft pod) ===\n")
 bridge <- bestballBroSim:::.scraper_to_feed_id_map(picks, feed)
-draft_pick <- picks$draft_id[!is.na(bridge[picks$underdog_id])][1L]
-pod_rows <- picks[picks$draft_id == draft_pick, ]
-pod_rows$feed_uid <- bridge[pod_rows$underdog_id]
-pod_rows <- pod_rows[!is.na(pod_rows$feed_uid), ]
+picks$feed_uid <- bridge[picks$underdog_id]
+cov <- tapply(picks$feed_uid, picks$draft_id,
+              function(v) mean(!is.na(v)))
+draft_pick <- names(sort(cov[cov >= 0.95], decreasing = TRUE))[1L]
+if (is.na(draft_pick)) draft_pick <- names(which.max(cov))
+pod_rows <- picks[picks$draft_id == draft_pick & !is.na(picks$feed_uid), ]
 pod_rosters <- lapply(split(pod_rows$feed_uid, pod_rows$draft_entry_id), unique)
-eid <- names(pod_rosters)[1L]
+cat(sprintf("draft %s: %d entries, roster sizes %s\n", draft_pick,
+            length(pod_rosters),
+            paste(range(lengths(pod_rosters)), collapse = "-")))
 
-res <- compute_team_bbm7_ev(
-  pod_rosters = pod_rosters, team_entry_id = eid,
-  positions = positions, layerA_draws = layerA,
-  schedule = schedule, lineup_spec = lineup_spec,
-  tournament_cfg = tcfg, field_cache = fp, n_sims = 500L, seed = 1L)
+# Evaluate every entry in the pod against the same field cache; show the best.
+evals <- lapply(names(pod_rosters), function(eid) {
+  compute_team_bbm7_ev(
+    pod_rosters = pod_rosters, team_entry_id = eid,
+    positions = positions, layerA_draws = layerA,
+    schedule = schedule, lineup_spec = lineup_spec,
+    tournament_cfg = tcfg, field_cache = fp, n_sims = 1000L, seed = 1L)
+})
+names(evals) <- names(pod_rosters)
+team_evs <- vapply(evals, function(e) e$team_ev$total_ev, numeric(1))
+cat("Pod team EVs ($): ",
+    paste(sprintf("%.2f", sort(team_evs, decreasing = TRUE)), collapse = ", "),
+    "\n", sep = "")
+eid <- names(which.max(team_evs))
+res <- evals[[eid]]
 
-cat("Team EV: $", round(res$team_ev$total_ev, 2),
+cat("\nShowing entry ", eid, " -- Team EV: $", round(res$team_ev$total_ev, 2),
     "  (qual $", round(res$team_ev$qualifier_round_ev, 2),
     " + champ $", round(res$team_ev$championship_round_ev, 2), ")\n", sep = "")
 pp <- res$per_player_ev
