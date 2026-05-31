@@ -74,17 +74,18 @@ test_that("BBM7 championship bucket caps sum to the full ~$13.5M champ prize", {
   fc <- bestballBroSim:::.tier_caps_from_yaml(
     tcfg$payouts$championship_round$tiers, eligibility = "finalist",
     total_slots = 667L)
+  # primary_slots is now derived from the primary tiers' own rank widths.
   sl <- bestballBroSim:::.tier_caps_combined(
     tcfg$payouts$championship_round$tiers,
     primary_eligibility = "semifinals_loser",
     fallback_eligibility = "qualifier_advancer",
-    primary_slots = 667L, total_slots = 7337L)
+    total_slots = 7337L)
   ql <- bestballBroSim:::.tier_caps_combined(
     tcfg$payouts$championship_round$tiers,
     primary_eligibility = c("quarterfinals_loser",
                             "quarterfinals_loser_lower"),
     fallback_eligibility = "qualifier_advancer",
-    primary_slots = 667L + 6003L, total_slots = 104052L)
+    total_slots = 104052L)
   total <- sum(vapply(fc, function(c) c$n_slots * c$usd, numeric(1))) +
     sum(vapply(sl, function(c) c$n_slots * c$usd, numeric(1))) +
     sum(vapply(ql, function(c) c$n_slots * c$usd, numeric(1)))
@@ -373,20 +374,20 @@ test_that("build_bbm7_field_payouts errors on a non-clean-multiple field", {
        tcfg = load_tournament("bbm7"))
 }
 
-test_that(".attribute_player_ev splits each payout additively across weeks", {
-  # Hand-built: 3 players, 2 sims.
+test_that(".attribute_player_ev splits each payout additively across stages", {
+  # Hand-built: 3 players, 2 sims. Stage-indexed contributions.
   pl <- c("a", "b", "c")
   mk <- function(m) matrix(m, nrow = 3, dimnames = list(pl, NULL))
-  contrib <- list(
-    q   = mk(c(30, 10, 0,   0, 0, 0)),   # sim1 a:30 b:10 c:0 ; sim2 all 0
-    w15 = mk(c(0, 0, 0,     8, 2, 0)),   # sim2: a:8 b:2
-    w16 = mk(c(0, 0, 0,     0, 0, 0)),
-    w17 = mk(c(0, 0, 0,     0, 0, 0))
-  )
+  contrib <- list(stage = list(
+    `1` = mk(c(30, 10, 0,   0, 0, 0)),   # sim1 a:30 b:10 c:0 ; sim2 all 0
+    `2` = mk(c(0, 0, 0,     8, 2, 0)),   # sim2 (stage 2): a:8 b:2
+    `3` = mk(c(0, 0, 0,     0, 0, 0)),
+    `4` = mk(c(0, 0, 0,     0, 0, 0))
+  ))
   q_pay <- c(100, 0)
   c_pay <- c(0, 50)
-  progression <- c("qualifier_loser", "qualifier_advancer")  # sim2: QF loser -> week 15
-  pp <- bestballBroSim:::.attribute_player_ev(contrib, q_pay, c_pay, progression)
+  depth <- c(1L, 2L)  # sim2: lost at stage 2 -> champ split over stage-2 contributions
+  pp <- bestballBroSim:::.attribute_player_ev(contrib, q_pay, c_pay, depth)
   # qualifier: sim1 $100 split 30:10 -> a $75, b $25, mean over 2 sims.
   ev <- stats::setNames(pp$total_ev, pp$underdog_id)
   expect_equal(ev[["a"]], (75 + 0.8 * 50) / 2)   # q: 75/2 ; champ sim2: 8/10*50
