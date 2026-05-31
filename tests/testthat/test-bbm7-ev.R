@@ -155,8 +155,13 @@ test_that("real-set: BBM7 money-conservation gap < 15% of expected", {
   pool  <- load_slate_data("nfl_2026_season")
   targets <- compute_field_targets(picks, slate_id = "nfl_2026_season")
 
+  tcfg <- load_tournament("bbm7")
+  # Money conservation needs a clean multiple of the per-finalist field share
+  # (1008 for BBM7); 2016 keeps this gated run tractable. The headline 10,080
+  # run lives in inst/scripts/smoke_bbm7_ev.R.
+  n_field <- resolve_bbm7_field_size(tcfg, 2016L)
   field <- generate_field("nfl_2026_season", picks = picks, player_pool = pool,
-                          targets = targets, n_teams = 1200L, seed = 1L)
+                          targets = targets, n_teams = n_field, seed = 1L)
   field_rosters <- split(field$rosters$underdog_id, field$rosters$entry_id)
 
   sources_path <- testthat::test_path("..", "..", "inst", "data",
@@ -186,7 +191,6 @@ test_that("real-set: BBM7 money-conservation gap < 15% of expected", {
   }
   schedule <- do.call(rbind, sched_chunks)
   lineup_spec <- load_slate_lineup_spec("nfl_2026_season")
-  tcfg <- load_tournament("bbm7")
 
   scores <- simulate_per_stage_scores(
     rosters = field_rosters, positions = positions,
@@ -197,9 +201,9 @@ test_that("real-set: BBM7 money-conservation gap < 15% of expected", {
   expected <- 15000010 / tcfg$total_field_size
   gap_rel  <- abs(fp$field_mean_total_ev - expected) / expected
   message(sprintf(
-    "[3b-7 money cons.] field-mean=%.2f  expected=%.2f  gap_rel=%.3f",
-    fp$field_mean_total_ev, expected, gap_rel))
-  expect_lt(gap_rel, 0.15)
+    "[3b-7 money cons.] n_field=%d field-mean=%.2f  expected=%.2f  gap_rel=%.3f",
+    n_field, fp$field_mean_total_ev, expected, gap_rel))
+  expect_lt(gap_rel, 0.08)
 })
 
 test_that("real-set: qualifier advance prob from compute_team_bbm7_ev matches 3b-5 xAdv", {
@@ -281,4 +285,171 @@ test_that("real-set: qualifier advance prob from compute_team_bbm7_ev matches 3b
                   res$advance_probs$qualifier, ref_xadv,
                   res$advance_probs$qualifier - ref_xadv))
   expect_lt(abs(res$advance_probs$qualifier - ref_xadv), 0.06)
+})
+
+# ---- Field-size guardrail (Prereq B) ----------------------------------------
+
+test_that("bbm7_field_multiple is total_field_size / final-stage seats", {
+  tcfg <- load_tournament("bbm7")
+  expect_equal(bbm7_field_multiple(tcfg), 1008L)   # 672336 / 667
+})
+
+test_that("resolve_bbm7_field_size snaps to the nearest valid multiple", {
+  tcfg <- load_tournament("bbm7")
+  expect_equal(resolve_bbm7_field_size(tcfg, 10000L), 10080L)  # 10 * 1008
+  expect_equal(resolve_bbm7_field_size(tcfg, 10080L), 10080L)  # already valid
+  expect_equal(resolve_bbm7_field_size(tcfg, 1L),     1008L)   # floors at base
+  # snap = FALSE errors and names nearby valid sizes.
+  expect_error(resolve_bbm7_field_size(tcfg, 1200L, snap = FALSE),
+               "not a multiple of 1008")
+})
+
+# ---- Overflow fix (Prereq A) + money conservation at n_field = 10,080 -------
+
+test_that("build_bbm7_field_payouts runs at n_field=10,080 without overflow", {
+  # n_full * rank overflows 32-bit ints above rank ~3,194; at 10,080 the
+  # top buckets exercise ranks far beyond that. With the as.numeric() fix
+  # the field-mean still converges to prize_pool / total_field_size (the
+  # money-conservation invariant) regardless of score realism, because the
+  # range-averaging integrates each bucket's full prize pool.
+  tcfg <- load_tournament("bbm7")
+  n_field <- 10080L; n_sims <- 12L
+  set.seed(1L)
+  ids <- paste0("t", seq_len(n_field))
+  mk <- function(mean) matrix(pmax(0, stats::rnorm(n_field * n_sims, mean, 30)),
+                              nrow = n_field, dimnames = list(ids, NULL))
+  scores <- list(q_cum = mk(2010), w15 = mk(150), w16 = mk(150), w17 = mk(150))
+  fp <- build_bbm7_field_payouts(scores, tcfg, seed = 1L)
+  expect_true(is.finite(fp$field_mean_total_ev))
+  expected <- 15000010 / tcfg$total_field_size       # ~ $22.31 gross
+  gap_rel <- abs(fp$field_mean_total_ev - expected) / expected
+  expect_lt(gap_rel, 0.03)
+})
+
+test_that("build_bbm7_field_payouts errors on a non-clean-multiple field", {
+  tcfg <- load_tournament("bbm7")
+  n_field <- 1000L; n_sims <- 4L
+  ids <- paste0("t", seq_len(n_field))
+  mk <- function() matrix(stats::runif(n_field * n_sims), nrow = n_field,
+                          dimnames = list(ids, NULL))
+  scores <- list(q_cum = mk(), w15 = mk(), w16 = mk(), w17 = mk())
+  expect_error(build_bbm7_field_payouts(scores, tcfg, seed = 1L),
+               "not a multiple of 1008")
+})
+
+# ---- Head 5: per-player attribution -----------------------------------------
+
+# Synthetic pod fixture: 6 entries over 30 players, real BBM7 stage shape.
+.synthetic_bbm7_pod <- function(n_sims = 1500L, player_mean = 18, player_sd = 6,
+                                seed = 11L) {
+  set.seed(seed)
+  pids <- paste0("p", sprintf("%02d", 1:30))
+  positions <- stats::setNames(
+    c(rep("QB", 4), rep("RB", 8), rep("WR", 12), rep("TE", 6)), pids)
+  team_teams <- paste0("T", sprintf("%02d", rep(1:6, length.out = 30)))
+  sched <- do.call(rbind, lapply(seq_len(17L), function(w) {
+    data.frame(underdog_id = pids, week = w, team = team_teams,
+               opponent = paste0("OPP_", team_teams),
+               is_bye = FALSE, stringsAsFactors = FALSE)
+  }))
+  layerA <- do.call(rbind, lapply(seq_len(17L), function(w) {
+    do.call(rbind, lapply(pids, function(p) {
+      data.frame(underdog_id = p, sim_idx = seq_len(n_sims), week = w,
+                 draw_value = pmax(0, stats::rnorm(n_sims, player_mean, player_sd)),
+                 stringsAsFactors = FALSE)
+    }))
+  }))
+  rosters <- list(e1 = pids[1:18], e2 = pids[2:19], e3 = pids[3:20],
+                  e4 = pids[4:21], e5 = pids[5:22], e6 = pids[6:23])
+  spec <- .season_spec_test()
+  # Pools tuned to the synthetic score scale so teams place sometimes.
+  fake_cache <- list(pools = list(
+    q_cum_pool             = stats::rnorm(50000L, 2010, 130),
+    qualifier_advancer_w15 = stats::rnorm(5000L, 144, 18),
+    qf_advancer_w16        = stats::rnorm(2000L, 144, 18),
+    sf_advancer_w17        = stats::rnorm(800L,  144, 18)))
+  list(rosters = rosters, positions = positions, layerA = layerA,
+       sched = sched, spec = spec, cache = fake_cache,
+       tcfg = load_tournament("bbm7"))
+}
+
+test_that(".attribute_player_ev splits each payout additively across weeks", {
+  # Hand-built: 3 players, 2 sims.
+  pl <- c("a", "b", "c")
+  mk <- function(m) matrix(m, nrow = 3, dimnames = list(pl, NULL))
+  contrib <- list(
+    q   = mk(c(30, 10, 0,   0, 0, 0)),   # sim1 a:30 b:10 c:0 ; sim2 all 0
+    w15 = mk(c(0, 0, 0,     8, 2, 0)),   # sim2: a:8 b:2
+    w16 = mk(c(0, 0, 0,     0, 0, 0)),
+    w17 = mk(c(0, 0, 0,     0, 0, 0))
+  )
+  q_pay <- c(100, 0)
+  c_pay <- c(0, 50)
+  progression <- c("qualifier_loser", "qualifier_advancer")  # sim2: QF loser -> week 15
+  pp <- bestballBroSim:::.attribute_player_ev(contrib, q_pay, c_pay, progression)
+  # qualifier: sim1 $100 split 30:10 -> a $75, b $25, mean over 2 sims.
+  ev <- stats::setNames(pp$total_ev, pp$underdog_id)
+  expect_equal(ev[["a"]], (75 + 0.8 * 50) / 2)   # q: 75/2 ; champ sim2: 8/10*50
+  expect_equal(ev[["b"]], (25 + 0.2 * 50) / 2)
+  expect_equal(ev[["c"]], 0)
+  # Additive: sums to the team EV.
+  expect_equal(sum(pp$qualifier_round_ev), mean(q_pay), tolerance = 1e-12)
+  expect_equal(sum(pp$championship_round_ev), mean(c_pay), tolerance = 1e-12)
+  expect_equal(sum(pp$total_ev), mean(q_pay) + mean(c_pay), tolerance = 1e-12)
+})
+
+test_that("per-player EV sums to team EV for every team (additivity gate)", {
+  fx <- .synthetic_bbm7_pod(n_sims = 1500L)
+  for (eid in names(fx$rosters)) {
+    res <- compute_team_bbm7_ev(
+      pod_rosters = fx$rosters, team_entry_id = eid, positions = fx$positions,
+      layerA_draws = fx$layerA, schedule = fx$sched, lineup_spec = fx$spec,
+      tournament_cfg = fx$tcfg, field_cache = fx$cache, n_sims = 1500L, seed = 7L)
+    pp <- res$per_player_ev
+    expect_equal(sum(pp$qualifier_round_ev),
+                 res$team_ev$qualifier_round_ev, tolerance = 1e-9)
+    expect_equal(sum(pp$championship_round_ev),
+                 res$team_ev$championship_round_ev, tolerance = 1e-9)
+    expect_equal(sum(pp$total_ev), res$team_ev$total_ev, tolerance = 1e-9)
+  }
+})
+
+test_that("attribution is non-trivial and labelled as attribution, not marginal", {
+  fx <- .synthetic_bbm7_pod(n_sims = 1500L)
+  res <- compute_team_bbm7_ev(
+    pod_rosters = fx$rosters, team_entry_id = "e1", positions = fx$positions,
+    layerA_draws = fx$layerA, schedule = fx$sched, lineup_spec = fx$spec,
+    tournament_cfg = fx$tcfg, field_cache = fx$cache, n_sims = 1500L, seed = 7L)
+  expect_gt(res$team_ev$total_ev, 0)                 # team wins money in fixture
+  expect_gt(sum(res$per_player_ev$total_ev > 0), 1L) # value spread across roster
+  expect_match(attr(res$per_player_ev, "metric"), "attribution")
+  expect_match(attr(res$per_player_ev, "metric"), "NOT marginal")
+})
+
+test_that("sanity: a high-scoring always-starter carries EV; a dead player ~ 0", {
+  fx <- .synthetic_bbm7_pod(n_sims = 1500L)
+  # Force p01 (a QB on e1) to dominate every week and p18 (TE on e1) to score
+  # nothing -> p18 never starts, p01 always does.
+  star <- "p01"; dead <- "p18"
+  fx$layerA$draw_value[fx$layerA$underdog_id == star] <- 60
+  fx$layerA$draw_value[fx$layerA$underdog_id == dead] <- 0
+  res <- compute_team_bbm7_ev(
+    pod_rosters = fx$rosters, team_entry_id = "e1", positions = fx$positions,
+    layerA_draws = fx$layerA, schedule = fx$sched, lineup_spec = fx$spec,
+    tournament_cfg = fx$tcfg, field_cache = fx$cache, n_sims = 1500L, seed = 7L)
+  ev <- stats::setNames(res$per_player_ev$total_ev, res$per_player_ev$underdog_id)
+  expect_equal(unname(ev[dead]), 0)                  # never started -> exactly 0
+  expect_gt(ev[star], stats::median(res$per_player_ev$total_ev))
+})
+
+test_that("per-player attribution is deterministic under a fixed seed", {
+  fx <- .synthetic_bbm7_pod(n_sims = 800L)
+  args <- list(pod_rosters = fx$rosters, team_entry_id = "e2",
+               positions = fx$positions, layerA_draws = fx$layerA,
+               schedule = fx$sched, lineup_spec = fx$spec,
+               tournament_cfg = fx$tcfg, field_cache = fx$cache,
+               n_sims = 800L, seed = 3L)
+  r1 <- do.call(compute_team_bbm7_ev, args)
+  r2 <- do.call(compute_team_bbm7_ev, args)
+  expect_equal(r1$per_player_ev, r2$per_player_ev)
 })

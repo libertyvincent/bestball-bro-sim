@@ -1,16 +1,28 @@
-# Smoke run: synthetic small-BBM7 field to verify money conservation.
+# Headline BBM7 EV run (Sprint 3b-7, head 5).
+#
+#   1. Money conservation at the recommended stable field size n_field =
+#      10,080 (a clean multiple of 672,336 / 667 = 1,008).
+#   2. A per-player additive EV attribution for one real scraped draft pod,
+#      eyeballed against the team EV (per-player EVs must sum to it).
+#
+# Run from the package root with `devtools::load_all()` already on the path,
+# or `Rscript -e 'devtools::load_all(); source("inst/scripts/smoke_bbm7_ev.R")'`.
 
-# 1. Generate small field via 3b-6.
 picks <- load_scraped_drafts()
 pool  <- load_slate_data("nfl_2026_season")
 targets <- compute_field_targets(picks, slate_id = "nfl_2026_season")
+tcfg <- load_tournament("bbm7")
 
-n_field <- 1200L   # 100 qualifier pods of 12
+# Clean multiple guardrail: snap the requested size to a money-conservation-
+# valid one (derived from config, not hardcoded).
+n_field <- resolve_bbm7_field_size(tcfg, 10080L)
+cat("n_field (snapped):", n_field, " base:", bbm7_field_multiple(tcfg), "\n")
+
 field <- generate_field("nfl_2026_season", picks = picks, player_pool = pool,
                         targets = targets, n_teams = n_field, seed = 1L)
 field_rosters <- split(field$rosters$underdog_id, field$rosters$entry_id)
 
-# 2. Layer A draws via the blender + simulate_slate (slate-shared, run once).
+# Layer A draws via the blender + simulate_slate (slate-shared, run once).
 sources_path <- file.path("inst", "data", "sources", "_manifest.yaml")
 slates_path  <- file.path("inst", "data", "slates",  "_manifest.yaml")
 feed <- blend_slate(slate_id = "nfl_2026_season",
@@ -20,7 +32,7 @@ feed <- blend_slate(slate_id = "nfl_2026_season",
 sim <- simulate_slate(feed, n_sims = 1000L, seed = 1L)
 layerA <- sim$draws
 
-# 3. Positions + schedule from the enriched feed.
+# Positions + schedule from the enriched feed.
 positions <- vapply(names(feed$players),
                     function(uid) feed$players[[uid]]$position %||% NA_character_,
                     character(1))
@@ -41,9 +53,8 @@ for (uid in names(feed$players)) {
 schedule <- do.call(rbind, sched_chunks)
 
 lineup_spec <- load_slate_lineup_spec("nfl_2026_season")
-tcfg <- load_tournament("bbm7")
 
-# 4. Score the field at every stage.
+# 1. Score the field at every stage + money conservation.
 cat("Scoring field (", n_field, " teams)...\n", sep = "")
 t0 <- Sys.time()
 field_scores <- simulate_per_stage_scores(
@@ -53,14 +64,45 @@ field_scores <- simulate_per_stage_scores(
 )
 cat(sprintf("  wall %.1fs\n", as.numeric(difftime(Sys.time(), t0, units="secs"))))
 
-# 5. Compute field payouts.
 cat("Computing field payouts...\n")
 t0 <- Sys.time()
 fp <- build_bbm7_field_payouts(field_scores, tcfg, seed = 1L)
 cat(sprintf("  wall %.1fs\n", as.numeric(difftime(Sys.time(), t0, units="secs"))))
 
-cat("\nField-mean total EV: $", round(fp$field_mean_total_ev, 2), "\n", sep="")
 expected <- 15000010 / tcfg$total_field_size
+cat("\n=== Money conservation (n_field = ", n_field, ") ===\n", sep = "")
+cat("Field-mean total EV (gross): $", round(fp$field_mean_total_ev, 2), "\n", sep="")
 cat("Expected (prize_pool / full_field): $", round(expected, 2), "\n", sep="")
-cat("Money conservation gap: $",
-    round(fp$field_mean_total_ev - expected, 2), "\n", sep="")
+cat("Gap: $", round(fp$field_mean_total_ev - expected, 2),
+    sprintf("  (%.2f%%)\n", 100 * abs(fp$field_mean_total_ev - expected) / expected),
+    sep = "")
+cat("Net of $25 entry: $", round(fp$field_mean_total_ev - tcfg$entry_fee_usd, 2), "\n", sep="")
+
+# 2. Per-player attribution for one real scraped BBM7 draft pod.
+cat("\n=== Per-player EV attribution (one real draft pod) ===\n")
+bridge <- bestballBroSim:::.scraper_to_feed_id_map(picks, feed)
+draft_pick <- picks$draft_id[!is.na(bridge[picks$underdog_id])][1L]
+pod_rows <- picks[picks$draft_id == draft_pick, ]
+pod_rows$feed_uid <- bridge[pod_rows$underdog_id]
+pod_rows <- pod_rows[!is.na(pod_rows$feed_uid), ]
+pod_rosters <- lapply(split(pod_rows$feed_uid, pod_rows$draft_entry_id), unique)
+eid <- names(pod_rosters)[1L]
+
+res <- compute_team_bbm7_ev(
+  pod_rosters = pod_rosters, team_entry_id = eid,
+  positions = positions, layerA_draws = layerA,
+  schedule = schedule, lineup_spec = lineup_spec,
+  tournament_cfg = tcfg, field_cache = fp, n_sims = 500L, seed = 1L)
+
+cat("Team EV: $", round(res$team_ev$total_ev, 2),
+    "  (qual $", round(res$team_ev$qualifier_round_ev, 2),
+    " + champ $", round(res$team_ev$championship_round_ev, 2), ")\n", sep = "")
+pp <- res$per_player_ev
+pp$name <- vapply(pp$underdog_id,
+                  function(u) feed$players[[u]]$name %||% u, character(1))
+pp$pos  <- positions[pp$underdog_id]
+print(pp[, c("name", "pos", "qualifier_round_ev", "championship_round_ev", "total_ev")],
+      row.names = FALSE)
+cat("\nSum of per-player total EV: $", round(sum(pp$total_ev), 4),
+    "  (team EV: $", round(res$team_ev$total_ev, 4), ")\n", sep = "")
+cat("Metric: ", attr(pp, "metric"), "\n", sep = "")
