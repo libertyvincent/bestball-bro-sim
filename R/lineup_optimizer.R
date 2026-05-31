@@ -90,6 +90,60 @@ optimize_lineup_totals <- function(scores, positions, lineup_spec,
   out
 }
 
+#' Per-player contributions to the optimal best-ball lineup
+#'
+#' The sibling of [optimize_lineup_totals()]: instead of returning each
+#' (sim, week) lineup *total*, it returns, for every (player, sim), the
+#' points that player contributed to the optimal starting lineup that
+#' week -- the player's score if they started, `0` if they were benched.
+#' By construction the per-week column sums equal
+#' [optimize_lineup_totals()]'s output, so the contributions are an exact
+#' additive decomposition of the lineup total.
+#'
+#' This powers BBM7's per-player EV *attribution* (head 5): once we know
+#' where each player's points landed in the lineups that determined a
+#' payout, realized winnings can be split across the roster additively.
+#' It is intentionally only used on a single evaluated team (not the full
+#' synthetic field), so the per-position rank work is cheap.
+#'
+#' Only the Season `1x FLEX{RB,WR,TE}` configuration is supported (BBM7's
+#' slate); other multi-position layouts abort, mirroring
+#' [optimize_lineup_totals()].
+#'
+#' @inheritParams optimize_lineup_totals
+#' @return A named list keyed by week (character), each element a numeric
+#'   `[n_players x n_sims]` matrix of per-player contributions with
+#'   `rownames = underdog_id` (only players present that week).
+#' @export
+optimize_lineup_contributions <- function(scores, positions, lineup_spec,
+                                          weeks = NULL) {
+  .validate_lineup_spec(lineup_spec)
+  if (!is.character(positions) || is.null(names(positions))) {
+    cli::cli_abort("`positions` must be a named character vector (underdog_id -> position).")
+  }
+  per_week <- .as_per_week_matrices(scores)
+  if (length(per_week) == 0L) {
+    cli::cli_abort("`scores` contains no weeks.")
+  }
+  available_weeks <- as.integer(names(per_week))
+  if (!is.null(weeks)) {
+    weeks <- as.integer(weeks)
+    missing <- setdiff(weeks, available_weeks)
+    if (length(missing) > 0L) {
+      cli::cli_abort("Requested weeks not in `scores`: {missing}")
+    }
+    per_week <- per_week[as.character(weeks)]
+    available_weeks <- weeks
+  }
+  out <- vector("list", length(per_week))
+  names(out) <- names(per_week)
+  for (wi in seq_along(per_week)) {
+    M <- per_week[[wi]]
+    out[[wi]] <- .week_player_contributions(M, positions, lineup_spec, ncol(M))
+  }
+  out
+}
+
 #' Load a slate's structured lineup spec from the manifest.
 #'
 #' Reads `inst/data/slates/_manifest.yaml`, pulls the `starting_lineup`
@@ -179,6 +233,94 @@ load_slate_lineup_spec <- function(slate_id) {
     return(total)
   }
   total + .multi_slot_contribution(multi_slots, pos_mats, consumed, n_sims)
+}
+
+#' Per-player contribution to the optimal lineup for one week.
+#'
+#' Returns a `[n_players x n_sims]` matrix: each player's score where they
+#' start, `0` where benched. Column sums equal [.week_total()] by
+#' construction. Vectorized across sims via per-position descending ranks;
+#' only the Season `1x FLEX{RB,WR,TE}` multi-slot layout is supported.
+#' @keywords internal
+.week_player_contributions <- function(M, positions, lineup_spec, n_sims) {
+  players <- rownames(M)
+  np_total <- length(players)
+  contrib <- matrix(0, nrow = np_total, ncol = n_sims,
+                    dimnames = list(players, NULL))
+  if (np_total == 0L) return(contrib)
+
+  slots <- lineup_spec$slots
+  pure_slots <- Filter(function(s) length(s$eligible) == 1L &&
+                                   s$eligible == s$pos, slots)
+  multi_slots <- Filter(function(s) !(length(s$eligible) == 1L &&
+                                      s$eligible == s$pos), slots)
+
+  player_pos <- positions[players]
+  consumed <- list()
+
+  for (s in pure_slots) {
+    p <- s$pos
+    k <- s$n
+    consumed[[p]] <- k
+    rows <- which(player_pos == p)
+    if (length(rows) == 0L) next
+    Mp <- M[rows, , drop = FALSE]
+    if (nrow(Mp) <= k) {
+      contrib[rows, ] <- contrib[rows, ] + Mp     # whole position starts
+    } else {
+      mask <- .desc_rank(Mp) <= k
+      contrib[rows, ] <- contrib[rows, ] + Mp * mask
+    }
+  }
+
+  if (length(multi_slots) == 0L) return(contrib)
+
+  flex_pool <- c("RB", "WR", "TE")
+  is_flex <- function(s) setequal(s$eligible, flex_pool) && s$n == 1L
+  if (!(length(multi_slots) == 1L && is_flex(multi_slots[[1L]]))) {
+    cli::cli_abort(c(
+      "Per-player attribution supports only the Season 1x FLEX{{RB,WR,TE}} layout.",
+      i = "Superflex / other multi-slot configs are not implemented for contributions."
+    ))
+  }
+
+  # FLEX takes the single best leftover (the (consumed_p + 1)-th best at
+  # each flex position); attribute its points to that specific player.
+  cand_vals <- matrix(-Inf, nrow = length(flex_pool), ncol = n_sims)
+  cand_inds <- vector("list", length(flex_pool))
+  for (pi in seq_along(flex_pool)) {
+    p <- flex_pool[[pi]]
+    full_ind <- matrix(0, np_total, n_sims)
+    rows <- which(player_pos == p)
+    k1 <- (consumed[[p]] %||% 0L) + 1L
+    if (length(rows) >= k1) {
+      Mp <- M[rows, , drop = FALSE]
+      ind <- .desc_rank(Mp) == k1            # one TRUE per column (ties.first)
+      cand_vals[pi, ] <- colSums(Mp * ind)
+      full_ind[rows, ] <- ind
+    }
+    cand_inds[[pi]] <- full_ind
+  }
+  winner <- max.col(t(cand_vals), ties.method = "first")  # length n_sims
+  for (pi in seq_along(flex_pool)) {
+    sel <- winner == pi
+    if (!any(sel)) next
+    val <- cand_vals[pi, ]
+    val[!sel | !is.finite(val)] <- 0
+    contrib <- contrib + sweep(cand_inds[[pi]], 2L, val, `*`)
+  }
+  contrib
+}
+
+#' Per-column descending rank (1 = highest) for a small position matrix.
+#' @keywords internal
+.desc_rank <- function(Mp) {
+  np <- nrow(Mp)
+  if (np == 0L) return(Mp)
+  if (np == 1L) return(matrix(1, 1L, ncol(Mp)))
+  asc <- t(matrixStats::colRanks(Mp, ties.method = "first",
+                                 preserveShape = FALSE))
+  (np + 1L) - asc
 }
 
 #' Sum of the top-K order statistics per column.

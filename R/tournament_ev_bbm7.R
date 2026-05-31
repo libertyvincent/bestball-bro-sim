@@ -24,9 +24,16 @@
 #' @param seed Optional integer seed.
 #' @param precomputed_marginals Optional shared marginal cache
 #'   from [precompute_layerA_marginals()].
+#' @param contrib_entry_id Optional entry_id. When supplied, per-player
+#'   contributions to that team's optimal lineups are computed from the
+#'   same joint draw and returned in `contrib` (used by head-5
+#'   attribution). Cheap -- only the one team is decomposed.
 #' @return Named list with four numeric matrices keyed by entry_id (as
 #'   rownames) and columns = sims:
-#'   `q_cum` (weeks 1-14 cumulative), `w15`, `w16`, `w17`.
+#'   `q_cum` (weeks 1-14 cumulative), `w15`, `w16`, `w17`. When
+#'   `contrib_entry_id` is set, also `contrib` -- a list of per-player
+#'   `[n_team_players x n_sims]` matrices `q` (weeks 1-14 summed), `w15`,
+#'   `w16`, `w17` (rownames = the team's underdog_ids); otherwise `NULL`.
 #' @export
 simulate_per_stage_scores <- function(rosters,
                                       positions,
@@ -36,7 +43,8 @@ simulate_per_stage_scores <- function(rosters,
                                       corr_params = default_corr_params,
                                       n_sims = 10000L,
                                       seed = NULL,
-                                      precomputed_marginals = NULL) {
+                                      precomputed_marginals = NULL,
+                                      contrib_entry_id = NULL) {
   if (!is.list(rosters) || length(rosters) == 0L) {
     cli::cli_abort("`rosters` must be a non-empty list of entry_id -> roster.")
   }
@@ -67,6 +75,15 @@ simulate_per_stage_scores <- function(rosters,
   w17 <- matrix(0, nrow = n_teams, ncol = n_sims,
                 dimnames = list(names(rosters), NULL))
 
+  contrib_target <- if (!is.null(contrib_entry_id)) {
+    idx <- match(contrib_entry_id, names(rosters))
+    if (is.na(idx)) {
+      cli::cli_abort("`contrib_entry_id` {.val {contrib_entry_id}} not found in `rosters`.")
+    }
+    idx
+  } else NA_integer_
+  contrib_out <- NULL
+
   for (i in seq_len(n_teams)) {
     team_pids <- intersect(rosters[[i]], union_ids)
     team_pos  <- positions[team_pids]
@@ -91,9 +108,31 @@ simulate_per_stage_scores <- function(rosters,
     if ("15" %in% week_cols) w15[i, ] <- wt[, "15"]
     if ("16" %in% week_cols) w16[i, ] <- wt[, "16"]
     if ("17" %in% week_cols) w17[i, ] <- wt[, "17"]
+
+    if (!is.na(contrib_target) && i == contrib_target) {
+      cw <- optimize_lineup_contributions(
+        scores      = team_ml,
+        positions   = team_pos,
+        lineup_spec = lineup_spec
+      )
+      mk <- function() matrix(0, length(team_pids), n_sims,
+                              dimnames = list(team_pids, NULL))
+      q_c <- mk(); c15 <- mk(); c16 <- mk(); c17 <- mk()
+      for (wk in names(cw)) {
+        Cm <- cw[[wk]]
+        rws <- rownames(Cm)
+        wnum <- as.integer(wk)
+        if (wnum >= 1L && wnum <= 14L) q_c[rws, ] <- q_c[rws, ] + Cm
+        else if (wnum == 15L) c15[rws, ] <- c15[rws, ] + Cm
+        else if (wnum == 16L) c16[rws, ] <- c16[rws, ] + Cm
+        else if (wnum == 17L) c17[rws, ] <- c17[rws, ] + Cm
+      }
+      contrib_out <- list(q = q_c, w15 = c15, w16 = c16, w17 = c17)
+    }
   }
 
-  list(q_cum = q_cum, w15 = w15, w16 = w16, w17 = w17)
+  list(q_cum = q_cum, w15 = w15, w16 = w16, w17 = w17,
+       contrib = contrib_out)
 }
 
 #' Compute BBM7 payouts for every (team, sim) cell of a field-sample
@@ -142,6 +181,24 @@ build_bbm7_field_payouts <- function(scores,
   n_sims  <- ncol(q_cum)
   entry_ids <- rownames(q_cum)
   if (is.null(entry_ids)) entry_ids <- as.character(seq_len(n_teams))
+
+  # Money conservation only holds when the field is a clean multiple of the
+  # per-finalist field share (see `bbm7_field_multiple()`). The scores are
+  # already computed here so we can't snap -- error with a clear message and
+  # point the caller at `resolve_bbm7_field_size()`, which snaps at
+  # field-generation time.
+  base <- bbm7_field_multiple(tournament_cfg)
+  if (n_teams %% base != 0L) {
+    lo <- max(base, (n_teams %/% base) * base)
+    hi <- lo + base
+    cli::cli_abort(c(
+      "Field sample has {n_teams} teams, not a multiple of {base}.",
+      x = "Money conservation requires a field that is a multiple of {base} \\
+           ({.code total_field_size / final-stage seats}); {n_teams} biases \\
+           the field-mean EV by several percent.",
+      i = "Regenerate the field at {lo} or {hi} (see {.fn resolve_bbm7_field_size})."
+    ))
+  }
 
   stages <- tournament_cfg$stages
   qual_pod    <- as.integer(stages[[1L]]$pod_size %||% 12L)
@@ -294,8 +351,16 @@ build_bbm7_field_payouts <- function(scores,
 #' (forward-simulate QF/SF/Final against advancer-conditional opponent
 #' pools sampled from `pools`).
 #'
-#' Per-player attribution (head 5) is deferred to a follow-up commit on
-#' this branch; see the PR description for rationale.
+#' Head 5 adds per-player EV **attribution**: each sim's realized
+#' winnings are split across the roster in proportion to the points each
+#' player contributed to the optimal lineups in the weeks that determined
+#' that payout -- qualifier-round $ across the weeks-1-14 lineup
+#' contributions, championship $ across the progression-path weeks the
+#' team actually played (week 15 for a QF loser; 15-16 for an SF loser;
+#' 15-17 for a finalist). Summed over sims, the per-player EVs add up to
+#' the team EV exactly. This is an attribution of *where realized value
+#' flowed*, NOT a marginal / value-over-replacement number -- it is not
+#' "EV lost if you drop this player".
 #'
 #' @param pod_rosters Named list (entry_id -> chr underdog_ids), the
 #'   evaluated team's actual draft pod. Same shape 3b-5 consumes.
@@ -320,6 +385,10 @@ build_bbm7_field_payouts <- function(scores,
 #'     \item `per_sim` -- data.frame with one row per sim:
 #'       `q_total, w15, w16, w17, qualifier_round_pay, champ_pay,
 #'       progression`.
+#'     \item `per_player_ev` -- data.frame, one row per evaluated-team
+#'       player: `underdog_id, qualifier_round_ev, championship_round_ev,
+#'       total_ev`. Additive attribution (sums to `team_ev`); carries a
+#'       `metric` attribute flagging it is not a marginal metric.
 #'   }
 #' @export
 compute_team_bbm7_ev <- function(pod_rosters,
@@ -345,14 +414,15 @@ compute_team_bbm7_ev <- function(pod_rosters,
   full_field <- as.integer(tournament_cfg$total_field_size %||% 672336L)
 
   pod_scores <- simulate_per_stage_scores(
-    rosters       = pod_rosters,
-    positions     = positions,
-    layerA_draws  = layerA_draws,
-    schedule      = schedule,
-    lineup_spec   = lineup_spec,
-    corr_params   = corr_params,
-    n_sims        = n_sims,
-    seed          = seed
+    rosters         = pod_rosters,
+    positions       = positions,
+    layerA_draws    = layerA_draws,
+    schedule        = schedule,
+    lineup_spec     = lineup_spec,
+    corr_params     = corr_params,
+    n_sims          = n_sims,
+    seed            = seed,
+    contrib_entry_id = team_entry_id
   )
 
   team_q   <- pod_scores$q_cum[team_entry_id, ]
@@ -438,12 +508,20 @@ compute_team_bbm7_ev <- function(pod_rosters,
                                 eligibility = "finalist")
   }
 
+  per_player_ev <- .attribute_player_ev(
+    contrib     = pod_scores$contrib,
+    q_pay       = q_pay,
+    c_pay       = c_pay,
+    progression = progression
+  )
+
   list(
     team_ev = list(
       qualifier_round_ev    = mean(q_pay),
       championship_round_ev = mean(c_pay),
       total_ev              = mean(q_pay) + mean(c_pay)
     ),
+    per_player_ev = per_player_ev,
     advance_probs = list(
       qualifier = mean(advance_q),
       qf  = mean(progression == "qf_advancer" | progression == "sf_advancer"),
@@ -462,6 +540,141 @@ compute_team_bbm7_ev <- function(pod_rosters,
       stringsAsFactors = FALSE
     )
   )
+}
+
+# ---- per-player attribution (head 5) ----------------------------------------
+
+#' Additively attribute a team's realized per-sim winnings across its
+#' roster, given per-player lineup contributions.
+#'
+#' For each sim the qualifier-round payout is split across the players'
+#' weeks-1-14 lineup contributions and the championship payout across the
+#' progression-path weeks the team actually played (week 15 for a QF
+#' loser; 15-16 for an SF loser; 15-17 for a finalist; nothing for a
+#' qualifier loser). Splitting each payout proportionally to a player's
+#' share of the contributing points makes the per-player EVs sum to the
+#' team EV exactly (the additivity gate) -- the per-sim column sums of the
+#' attribution recover `q_pay` / `c_pay` whenever the team scored, and a
+#' team that scored nothing earns nothing to attribute.
+#' @keywords internal
+.attribute_player_ev <- function(contrib, q_pay, c_pay, progression) {
+  if (is.null(contrib)) {
+    cli::cli_abort(
+      "Per-player contributions missing; call simulate_per_stage_scores(contrib_entry_id=).")
+  }
+  players <- rownames(contrib$q)
+  n_sims  <- length(q_pay)
+
+  # Qualifier round: split across weeks-1-14 contributions.
+  q_c     <- contrib$q
+  denom_q <- colSums(q_c)
+  fac_q   <- ifelse(denom_q > 0, q_pay / denom_q, 0)
+  q_attr  <- sweep(q_c, 2L, fac_q, `*`)
+
+  # Championship round: split across the progression-path weeks.
+  champ_c <- matrix(0, nrow = length(players), ncol = n_sims,
+                    dimnames = list(players, NULL))
+  is_qadv <- progression == "qualifier_advancer"   # QF loser: week 15
+  is_qfa  <- progression == "qf_advancer"           # SF loser: weeks 15-16
+  is_sfa  <- progression == "sf_advancer"           # finalist: weeks 15-17
+  if (any(is_qadv)) champ_c[, is_qadv] <- contrib$w15[, is_qadv, drop = FALSE]
+  if (any(is_qfa)) {
+    champ_c[, is_qfa] <- contrib$w15[, is_qfa, drop = FALSE] +
+      contrib$w16[, is_qfa, drop = FALSE]
+  }
+  if (any(is_sfa)) {
+    champ_c[, is_sfa] <- contrib$w15[, is_sfa, drop = FALSE] +
+      contrib$w16[, is_sfa, drop = FALSE] + contrib$w17[, is_sfa, drop = FALSE]
+  }
+  denom_c <- colSums(champ_c)
+  fac_c   <- ifelse(denom_c > 0, c_pay / denom_c, 0)
+  c_attr  <- sweep(champ_c, 2L, fac_c, `*`)
+
+  player_q_ev <- rowMeans(q_attr)
+  player_c_ev <- rowMeans(c_attr)
+  out <- data.frame(
+    underdog_id           = players,
+    qualifier_round_ev    = player_q_ev,
+    championship_round_ev = player_c_ev,
+    total_ev              = player_q_ev + player_c_ev,
+    row.names = NULL,
+    stringsAsFactors = FALSE
+  )
+  out <- out[order(-out$total_ev), , drop = FALSE]
+  rownames(out) <- NULL
+  attr(out, "metric") <- paste(
+    "additive EV attribution (realized value flow);",
+    "NOT marginal / value-over-replacement -- not 'EV lost if dropped'")
+  out
+}
+
+# ---- field-size guardrail ---------------------------------------------------
+
+#' Money-conservation-valid synthetic-field base for a tournament
+#'
+#' [build_bbm7_field_payouts()] reproduces the prize pool only when the
+#' synthetic field size is an exact multiple of `total_field_size`
+#' divided by the final-stage seat count -- the number of full-field
+#' entries each finalist "represents". For BBM7 that is
+#' 672,336 / 667 = 1,008. A field that is *not* a multiple of it (e.g.
+#' 1,200) splits unevenly through the qualifier -> QF -> SF -> Final pod
+#' bracket and biases the field-mean EV by several percent. The base is
+#' derived from config, not hardcoded, so Puppy / Dachshund / etc. each
+#' get their own denominator.
+#'
+#' @param tournament_cfg Parsed tournament config from [load_tournament()].
+#' @return Integer base; valid field sizes are positive multiples of it.
+#' @export
+bbm7_field_multiple <- function(tournament_cfg) {
+  full_field <- as.integer(tournament_cfg$total_field_size %||% NA_integer_)
+  stages <- tournament_cfg$stages
+  final_seats <- if (length(stages) > 0L) {
+    as.integer(stages[[length(stages)]]$seats_entering %||% NA_integer_)
+  } else NA_integer_
+  if (is.na(full_field) || is.na(final_seats) || final_seats <= 0L) {
+    cli::cli_abort(
+      "Cannot derive field multiple: config missing `total_field_size` or final-stage `seats_entering`.")
+  }
+  if (full_field %% final_seats != 0L) {
+    cli::cli_abort(c(
+      "`total_field_size` ({full_field}) is not an exact multiple of the \\
+       final-stage seat count ({final_seats}).",
+      i = "The money-conservation guarantee needs a clean per-finalist field share."
+    ))
+  }
+  as.integer(full_field / final_seats)
+}
+
+#' Snap a requested synthetic-field size to a money-conservation-valid one
+#'
+#' Use at field-generation time (before [generate_field()] /
+#' [build_bbm7_field_payouts()]) so the field is a clean multiple of
+#' [bbm7_field_multiple()].
+#'
+#' @param tournament_cfg Parsed tournament config from [load_tournament()].
+#' @param n_field Requested field size.
+#' @param snap If `TRUE` (default) returns the nearest positive multiple of
+#'   the base; if `FALSE`, errors when `n_field` is not already a valid
+#'   multiple, naming the nearby valid sizes.
+#' @return Integer valid field size (a positive multiple of the base).
+#' @export
+resolve_bbm7_field_size <- function(tournament_cfg, n_field, snap = TRUE) {
+  base <- bbm7_field_multiple(tournament_cfg)
+  n_field <- as.integer(n_field)
+  if (!is.na(n_field) && n_field > 0L && n_field %% base == 0L) {
+    return(n_field)
+  }
+  if (!isTRUE(snap)) {
+    lo <- max(base, (as.integer(n_field) %/% base) * base)
+    hi <- lo + base
+    cli::cli_abort(c(
+      "n_field = {n_field} is not a multiple of {base} (the money-conservation base).",
+      i = "Nearest valid sizes: {lo} or {hi}. Pass a multiple of {base} \\
+           (e.g. {base}, {2L * base}, {10L * base})."
+    ))
+  }
+  mult <- max(1L, as.integer(round(as.numeric(n_field) / base)))
+  mult * base
 }
 
 # ---- helpers ----------------------------------------------------------------
@@ -545,8 +758,13 @@ compute_team_bbm7_ev <- function(pod_rosters,
 #' @keywords internal
 .range_avg_payout <- function(rank_in_sample, n_sample, n_full, caps) {
   if (n_sample <= 0L) return(0)
-  rk_low  <- floor((rank_in_sample - 1L) * n_full / n_sample) + 1L
-  rk_high <- floor(rank_in_sample      * n_full / n_sample)
+  # `(rank_in_sample - 1L) * n_full` overflows 32-bit integer arithmetic once
+  # the product exceeds 2^31 (n_full = 672,336 for BBM7, so any rank above
+  # ~3,194 trips it -- and the recommended stable n_field >= 10,080 always
+  # does). Force the rank-scaling into double precision before multiplying.
+  rk_low  <- floor((as.numeric(rank_in_sample) - 1) * as.numeric(n_full) /
+                     n_sample) + 1
+  rk_high <- floor(as.numeric(rank_in_sample) * as.numeric(n_full) / n_sample)
   if (rk_high < rk_low) rk_high <- rk_low
   total <- 0
   cursor <- 1L

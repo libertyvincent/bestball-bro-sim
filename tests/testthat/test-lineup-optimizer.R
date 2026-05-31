@@ -407,3 +407,63 @@ test_that("optimize_lineup_totals accepts named per-week list of matrices", {
   t_mat  <- optimize_lineup_totals(mlist, positions, .season_spec())
   expect_equal(t_long, t_mat, ignore_attr = TRUE)
 })
+
+# ---- 9. Per-player contributions (head-5 attribution input) -----------------
+
+test_that("Season: optimize_lineup_contributions names the right starters", {
+  # Same roster as test 1; FLEX = RB3 (14).
+  scores <- c(
+    QB1 = 30, QB2 = 22,
+    RB1 = 25, RB2 = 18, RB3 = 14, RB4 = 5,
+    WR1 = 22, WR2 = 20, WR3 = 17, WR4 = 12, WR5 = 6,
+    TE1 = 13, TE2 = 9
+  )
+  positions <- c(QB1 = "QB", QB2 = "QB",
+                 RB1 = "RB", RB2 = "RB", RB3 = "RB", RB4 = "RB",
+                 WR1 = "WR", WR2 = "WR", WR3 = "WR", WR4 = "WR", WR5 = "WR",
+                 TE1 = "TE", TE2 = "TE")
+  pw <- matrix(scores, nrow = length(scores), ncol = 1L,
+               dimnames = list(names(scores), NULL))
+  con <- optimize_lineup_contributions(list(`1` = pw), positions, .season_spec())
+  v <- con[["1"]][, 1L]
+  started <- c("QB1", "RB1", "RB2", "WR1", "WR2", "WR3", "TE1", "RB3")  # RB3 = FLEX
+  benched <- setdiff(names(scores), started)
+  expect_equal(v[started], scores[started])           # starters keep their score
+  expect_true(all(v[benched] == 0))                    # benched contribute 0
+  expect_equal(sum(v), 159)                            # == hand-computed total
+})
+
+test_that("contributions column-sum to optimize_lineup_totals (random cross-check)", {
+  set.seed(202L)
+  pids <- paste0("p", sprintf("%02d", 1:22))
+  positions <- setNames(
+    c(rep("QB", 3), rep("RB", 7), rep("WR", 9), rep("TE", 3)), pids)
+  n_sims <- 50L
+  per_week <- setNames(lapply(1:6, function(w) {
+    matrix(pmax(0, stats::rnorm(length(pids) * n_sims, 11, 6)),
+           nrow = length(pids), dimnames = list(pids, NULL))
+  }), as.character(1:6))
+
+  tot <- optimize_lineup_totals(per_week, positions, .season_spec())
+  con <- optimize_lineup_contributions(per_week, positions, .season_spec())
+  for (w in colnames(tot)) {
+    expect_equal(colSums(con[[w]]), tot[, w], ignore_attr = TRUE,
+                 tolerance = 1e-9)
+  }
+  # Never more than the 8 Season starters contribute in any (sim, week).
+  for (w in names(con)) {
+    expect_true(all(colSums(con[[w]] > 0) <= 8L))
+  }
+})
+
+test_that("optimize_lineup_contributions rejects unsupported multi-slot layouts", {
+  scores <- c(QB1 = 20, RB1 = 10, RB2 = 9, WR1 = 8, WR2 = 7, TE1 = 6)
+  positions <- c(QB1 = "QB", RB1 = "RB", RB2 = "RB",
+                 WR1 = "WR", WR2 = "WR", TE1 = "TE")
+  pw <- matrix(scores, nrow = length(scores), ncol = 1L,
+               dimnames = list(names(scores), NULL))
+  expect_error(
+    optimize_lineup_contributions(list(`1` = pw), positions, .superflex_spec()),
+    "Season 1x FLEX"
+  )
+})
