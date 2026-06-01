@@ -163,14 +163,15 @@ simulate_slate <- function(feed, n_sims = 10000L, seed = NULL) {
   )
 }
 
-#' Run Monte Carlo season simulations (legacy v0 / v1 stub)
+#' Run Monte Carlo season simulations (stub)
 #'
-#' Original v1 entry point. Kept stubbed -- v2's simulator is
-#' [simulate_slate()] which consumes the blender's per-player output.
+#' Planned roster-level entry point for the Layer B precompute. Kept
+#' stubbed -- the active Monte Carlo path is [simulate_slate()], which
+#' consumes the blender's per-player output.
 #' @export
 run_season_sims <- function(projections, n_sims = 10000L) {
   cli::cli_abort(c(
-    "Not yet implemented in the v1 shape.",
-    i = "Use simulate_slate() (v2) for the active Monte Carlo path."
+    "Not yet implemented.",
+    i = "Use simulate_slate() for the active Monte Carlo path."
   ))
 }

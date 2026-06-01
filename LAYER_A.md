@@ -1,5 +1,14 @@
 # Layer A — Projections & Player Simulations
 
+> **Status note (June 2026):** the v1 nflverse pipeline this document designs
+> (`R/projections.R` + `R/rookies.R` and their data pullers) was implemented and
+> later **retired** — its output had no consumers. The live Layer A is the v2
+> blended-consensus pipeline (`R/blender.R` + `R/simulate.R`), documented in the
+> README's Blender / Monte Carlo sections and in [ARCHITECTURE.md](ARCHITECTURE.md).
+> This document is kept as the design record for the methodology decisions
+> (distributional outputs, variance modeling, validation approach) that carried
+> forward into v2.
+
 ## Purpose
 
 Layer A is the foundation of the BestBall Bro analytical stack. It produces per-player season and weekly fantasy point distributions, plus the correlation structure between players, that downstream layers (offline tournament EV pre-computation, live draft recommendation engine, future DFS lineup optimizer) consume.

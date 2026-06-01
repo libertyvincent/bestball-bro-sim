@@ -16,7 +16,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 360   # building blocks per tournament is the long pole
+    timeout-minutes: 360   # v2 publish at 10K sims/player across all slates
 
     steps:
       - name: Checkout sim repo
@@ -32,10 +32,10 @@ jobs:
         uses: r-lib/actions/setup-r-dependencies@v2
         with:
           packages: |
-            any::nflreadr
-            any::nflfastR
             any::jsonlite
             any::yaml
+            any::httr2
+            any::digest
             any::dplyr
             any::tidyr
             any::purrr
@@ -51,63 +51,18 @@ jobs:
         # load_tournament_config() pair.
         run: Rscript -e 'devtools::load_all(); invisible(load_tournaments())'
 
-      - name: Create build directories
-        # Primes the feed tree so publish_* writes into an existing path.
-        # (dir.create(recursive = TRUE) inside the publish functions also
-        # handles this, but creating up front keeps the workflow obvious.)
-        run: mkdir -p build/feed/v1/projections
-
-      - name: Generate and publish v1 multi-slate feed
-        # v1 pipeline: loop over every enabled slate in
-        # inst/data/slates/_manifest.yaml, project from that slate's
-        # Underdog CSV (canonical player universe), and emit one
-        # v1/projections/<slate_id>.json per slate plus a unified
-        # _meta.json at the feed root. Season simulations and Layer B
-        # tournament precompute are still v1.5+ work.
-        run: |
-          Rscript -e '
-            devtools::load_all()
-            manifest <- load_slate_manifest()
-            enabled  <- Filter(function(e) isTRUE(e$enabled), manifest)
-            if (length(enabled) == 0L) stop("No enabled slates")
-            slates_for_meta <- list()
-            season_for_meta <- NULL
-            model_version <- "1.0.0"
-            for (sid in names(enabled)) {
-              entry <- enabled[[sid]]
-              cat("\n=== Slate:", sid, "===\n")
-              proj <- generate_projections(slate_id = sid)
-              publish_projections(proj, out_dir = "build/feed",
-                                  slate_id = sid, slate_meta = entry,
-                                  model_version = model_version)
-              slates_for_meta[[sid]] <- list(
-                underdog_slate_id = entry$underdog_slate_id,
-                path              = paste0("v1/projections/", sid, ".json"),
-                version           = model_version
-              )
-              if (is.null(season_for_meta)) season_for_meta <- entry$season
-            }
-            publish_manifest(out_dir = "build/feed",
-                             slates = slates_for_meta,
-                             season = season_for_meta)
-          '
-
-      - name: Stage v1 subtree for deploy
-        # Deploy only the v1/ namespace + _meta.json. The root projections/
-        # directory in bestball-bro-data belongs to Clay's legacy feed and
-        # must not be touched by this workflow. keep_files: true (below)
-        # preserves any path we do not stage here.
-        run: |
-          mkdir -p build/deploy
-          cp -r build/feed/v1 build/deploy/
-          cp build/feed/_meta.json build/deploy/
+      - name: Create deploy directory
+        # publish_v2() creates its own v2/ subtree; this just primes the
+        # deploy root so the workflow paths are obvious.
+        run: mkdir -p build/deploy
 
       - name: Run v2 blender + Monte Carlo simulator
-        # Writes:
+        # The whole feed build. Writes:
         #   build/deploy/v2/projections/<slate>.json  -> goes to gh-pages
         #   build/deploy/v2/draws/<slate>.parquet     -> moved to artifacts
-        # Also updates build/deploy/_meta.json to register v2 entries
-        # alongside the v1 entries that the v1 path wrote earlier.
+        #   build/deploy/_meta.json                   -> goes to gh-pages
+        # _meta.json is authored here (season header + per-slate v2_path /
+        # v2_sha256 / v2_generated_at); no other step creates or edits it.
         run: |
           Rscript -e 'devtools::load_all(); publish_v2(out_dir = "build/deploy", n_sims = 10000L)'
 
@@ -126,6 +81,9 @@ jobs:
           rmdir build/deploy/v2/draws
 
       - name: Publish to bestball-bro-data
+        # build/deploy now contains only v2/ + _meta.json. keep_files: true
+        # preserves everything else already on gh-pages (Clay/ETR/LegUp
+        # source feeds, the legacy root projections/ directory).
         uses: peaceiris/actions-gh-pages@v4
         with:
           deploy_key: ${{ secrets.BESTBALL_BRO_DATA_DEPLOY_KEY }}

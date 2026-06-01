@@ -20,6 +20,43 @@
   all(file.exists(file.path(cache_dir, paste0(keys, ".json"))))
 }
 
+# Hermetic: _meta.json is v2-authored. With no pre-existing _meta.json (the
+# retired v1 path used to create it), .update_root_meta_for_v2 must produce a
+# complete manifest: season header, generated_at, and the v2 triple per slate.
+test_that(".update_root_meta_for_v2 authors _meta.json from scratch (no v1 step)", {
+  tmp <- tempfile()
+  dir.create(tmp)
+  on.exit(unlink(tmp, recursive = TRUE))
+
+  v2_rel  <- file.path("v2", "projections", "nfl_2026_season.json")
+  v2_path <- file.path(tmp, v2_rel)
+  dir.create(dirname(v2_path), recursive = TRUE)
+  jsonlite::write_json(list(players = list()), v2_path, auto_unbox = TRUE)
+
+  slate_manifest <- list(
+    nfl_2026_season = list(
+      underdog_slate_id = "a9c04e81-1ace-4b16-a31d-4c725a47f16f",
+      season            = 2026
+    )
+  )
+
+  .update_root_meta_for_v2(tmp, "nfl_2026_season", slate_manifest)
+
+  meta_path <- file.path(tmp, "_meta.json")
+  expect_true(file.exists(meta_path))
+  m <- jsonlite::fromJSON(meta_path, simplifyVector = FALSE)
+
+  expect_equal(m$season, 2026L)
+  expect_false(is.null(m$generated_at))
+
+  entry <- m$slates$nfl_2026_season
+  expect_equal(entry$underdog_slate_id,
+               "a9c04e81-1ace-4b16-a31d-4c725a47f16f")
+  expect_equal(entry$v2_path, "v2/projections/nfl_2026_season.json")
+  expect_true(nchar(entry$v2_sha256) > 32L)
+  expect_false(is.null(entry$v2_generated_at))
+})
+
 test_that("publish_v2 produces JSON + parquet for the Season slate", {
   skip_if_not_installed("arrow")
   skip_if_not(.season_cache_warm(),
@@ -70,9 +107,11 @@ test_that("publish_v2 produces JSON + parquet for the Season slate", {
   # multiple of 1800.
   expect_equal(nrow(draws) %% 1800L, 0L)
 
-  # --- _meta.json updated ---
+  # --- _meta.json authored by the v2 path alone (no v1 step ran here) ---
   expect_true(file.exists(meta_path))
   m <- jsonlite::fromJSON(meta_path, simplifyVector = FALSE)
+  expect_equal(m$season, 2026L)
+  expect_false(is.null(m$generated_at))
   s <- m$slates$nfl_2026_season
   expect_equal(s$v2_path, "v2/projections/nfl_2026_season.json")
   expect_true(nchar(s$v2_sha256) > 32L)

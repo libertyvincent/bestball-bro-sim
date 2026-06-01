@@ -4,11 +4,12 @@
 #' JSON write yet), runs [simulate_slate()] to replace analytical
 #' percentiles with empirical Monte Carlo percentiles, writes the feed
 #' JSON, and writes the full per-player per-week draws as a parquet
-#' file under `<out_dir>/v2/draws/<slate_id>.parquet`. Then updates the
-#' feed root's `_meta.json` to register v2 paths + checksums.
+#' file under `<out_dir>/v2/draws/<slate_id>.parquet`. Then writes (or
+#' updates) the feed root's `_meta.json` to register v2 paths + checksums.
 #'
-#' Sprint 2 kept v1 and v2 published in parallel; Sprint 2.5 keeps that
-#' arrangement but flips v2's percentiles from analytical to empirical.
+#' `_meta.json` is authored here: when the file does not exist yet,
+#' [.update_root_meta_for_v2()] creates it from scratch with the season
+#' header and one entry per published slate.
 #' The parquet draws are server-side artifacts only -- they DO NOT go
 #' to gh-pages (too large for Pages's 1 GB site limit). Layer B in
 #' Sprint 3 will consume them via GitHub Actions artifacts.
@@ -73,10 +74,11 @@ publish_v2 <- function(out_dir   = "build",
 
 #' Register v2 outputs in the feed root's `_meta.json`
 #'
-#' Preserves whatever the v1 path already wrote -- we only add a
-#' `v2_path`, `v2_sha256`, `v2_generated_at` triple per slate. The
-#' extension can read the file blind and pick v1 or v2 by which fields
-#' exist.
+#' Authors `_meta.json` when it does not exist; otherwise updates it
+#' in place, preserving any fields other publishers wrote. Each slate
+#' entry gets a `v2_path`, `v2_sha256`, `v2_generated_at` triple plus
+#' its `underdog_slate_id`; the manifest header carries `season` and
+#' `generated_at`.
 #' @keywords internal
 .update_root_meta_for_v2 <- function(out_dir, slate_ids, slate_manifest) {
   meta_path <- file.path(out_dir, "_meta.json")
@@ -86,6 +88,14 @@ publish_v2 <- function(out_dir   = "build",
     list(season = NULL, generated_at = NULL, slates = list())
   }
   if (is.null(manifest$slates)) manifest$slates <- list()
+
+  # _meta is v2-authored: fill the season header from the slate manifest
+  # when this run is creating the file (or a prior writer left it NULL).
+  if (is.null(manifest$season)) {
+    seasons <- unlist(lapply(slate_ids,
+                             function(sid) slate_manifest[[sid]]$season))
+    if (length(seasons) > 0) manifest$season <- as.integer(seasons[[1]])
+  }
 
   for (sid in slate_ids) {
     v2_rel <- file.path("v2", "projections", paste0(sid, ".json"))
