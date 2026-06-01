@@ -70,7 +70,7 @@ Compatibility:
 | 1.x.y       | 1.x.z           | Compatible |
 | 1.x.y       | 2.x.z           | Incompatible — extension warns, falls back to projections-only mode |
 
-`_meta.json` at root is the multi-slate manifest:
+`_meta.json` at root is the multi-slate manifest. Each slate entry carries the v1 fields (written by `publish_manifest()`) and, once `publish_v2()` has run, a v2 triple registered by `.update_root_meta_for_v2()`:
 
 ```jsonc
 {
@@ -78,10 +78,15 @@ Compatibility:
   "generated_at": "2026-08-15T03:00:00Z",
   "slates": {
     "nfl_2026_season": {
+      // v1 (publish_manifest)
       "underdog_slate_id": "a9c04e81-1ace-4b16-a31d-4c725a47f16f",
       "path":              "v1/projections/nfl_2026_season.json",
       "version":           "1.0.0",
-      "sha256":            "..."
+      "sha256":            "...",
+      // v2 (.update_root_meta_for_v2 — added per slate after publish_v2())
+      "v2_path":           "v2/projections/nfl_2026_season.json",
+      "v2_sha256":         "...",
+      "v2_generated_at":   "2026-08-15T03:05:00Z"
     }
     // future slates (nfl_2026_eliminator, nfl_2026_weekly_winners,
     // nfl_2026_superflex) appear here once enabled in
@@ -90,9 +95,20 @@ Compatibility:
 }
 ```
 
+The v2 registration is additive — `.update_root_meta_for_v2()` preserves whatever the v1 path already wrote and only adds the `v2_path` / `v2_sha256` / `v2_generated_at` triple. The extension can read `_meta.json` blind and pick v1 or v2 by which fields exist.
+
 The `slates` map is open-ended — adding a new slate means dropping its CSV in `inst/data/slates/`, flipping `enabled: true` in the manifest YAML, and the next build produces a new entry here automatically.
 
-Tournament configs and building-blocks files (Layer B output) are not represented in the current `_meta.json` schema — they re-enter when Layer B precompute ships.
+### v2 outputs (settled)
+
+`publish_v2()` writes, per enabled slate:
+
+- **`v2/projections/<slate_id>.json`** — blended-consensus projections (Clay/ETR/LegUp via `blend_slate()`) with **empirical percentiles** from the Monte Carlo season simulator (`simulate_slate()`, default 10,000 sims/player). Published to gh-pages and registered in `_meta.json` as above.
+- **`v2/draws/<slate_id>.parquet`** — the full per-player per-week sim draws (long format: `underdog_id, sim_idx, week, draw_value`). **Server-side artifact only, never on gh-pages**: CI moves these out of the publish directory and uploads them as a GitHub Actions artifact (`v2-draws-<run-id>`, 90-day retention). They are not registered in `_meta.json`.
+
+Separately, `publish_field_empirics()` writes **`v2/field_empirics/<slate_id>.json`** per slate (position-count, stack-pattern, and pick-slot distributions from scraped Underdog drafts) under the local build tree. These are local-only for now — not yet pushed to gh-pages and not registered in `_meta.json`.
+
+Tournament configs and building-blocks files (Layer B output) are not represented in the current `_meta.json` schema — `publish_building_blocks()` is still a stub, and they re-enter when the Layer B building-block precompute ships. Their wire format is finalized in the EV-brain contract sprint, not here.
 
 ---
 

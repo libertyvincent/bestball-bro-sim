@@ -23,6 +23,12 @@ real_v0_feed/
 # Throwaway local diagnostic scripts (e.g. tmp_blend_all.R)
 tmp_*.R
 
+# Claude Code scratch prompt — local-only, never commit
+prompt.md
+
+# Local feed-gen runner (hardcoded user paths) — not package code
+generate_real_feed.R
+
 # Auto-generated docs from roxygen — regenerate locally via
 # devtools::document(). CI uses devtools::load_all() which doesn't need them.
 man/
