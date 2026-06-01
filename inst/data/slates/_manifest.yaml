@@ -22,6 +22,10 @@ slates:
         - { pos: TE,   "n": 1 }
         - { pos: FLEX, "n": 1, eligible: [RB, WR, TE] }
   nfl_2026_eliminator:
+    # UUID verified against the udbb-scraper export (2026-05-27): this slate's
+    # captured draft runs 18 rounds with the first QB taken at pick 25 (standard
+    # 1-QB lineup) and hosts The Frenchie Eliminator (88fcfddf). Not transposed
+    # with nfl_2026_superflex -- see inst/scripts/diag_verify_slate_uuids.py.
     underdog_slate_id: 0ee05b31-f904-4e6e-985b-42f290e3aa3a
     display_name: NFL 2026 Eliminator Season
     season: 2026
@@ -60,6 +64,11 @@ slates:
         - { pos: TE,   "n": 1 }
         - { pos: FLEX, "n": 1, eligible: [RB, WR, TE] }
   nfl_2026_superflex:
+    # UUID verified against the udbb-scraper export (2026-05-27): this slate's
+    # captured draft runs 20 rounds with 8 QBs taken in round 1 (QB #1 overall,
+    # teams roster up to 6 QBs) and hosts The Field General (08bddf11) -- it is
+    # genuinely the Superflex slate. Not transposed with nfl_2026_eliminator --
+    # see inst/scripts/diag_verify_slate_uuids.py.
     underdog_slate_id: 11300882-a76f-4e12-8a5e-1a6b4c513794
     display_name: NFL 2026 Superflex Season
     season: 2026
