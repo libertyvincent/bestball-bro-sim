@@ -10,3 +10,6 @@
 ^build$
 ^renv$
 ^renv\.lock$
+^prompt\.md$
+^generate_real_feed\.R$
+^\.claude$

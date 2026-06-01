@@ -20,46 +20,56 @@ Read these before changing anything structural.
 
 ## Status
 
-**Pre-alpha.** Working today: tournament config loading + validation (`R/tournament_loader.R` + tests). Canonical per-tournament YAML configs live under `inst/data/tournaments/` (Sprint 3a schema). Everything else is stubbed pending implementation per LAYER_A.md / LAYER_B.md decisions.
+**Layer A and Layer B are implemented and tested.** Layer A: v1 nflverse projections (`R/projections.R`, `R/rookies.R`), the v2 blended-consensus projections (`R/blender.R` + `R/calibration.R`), the Monte Carlo season simulator with empirical percentiles (`R/simulate.R`), and the v1/v2 feed publishers (`R/publish.R`, `R/publish_v2.R`). Layer B: field empirics from scraped Underdog drafts (`R/field_empirics.R`), the synthetic opponent-field model (`R/field_model.R`), correlated cross-player draws (`R/correlation.R`), the best-ball lineup optimizer (`R/lineup_optimizer.R`), the team season simulator (`R/math_simulator.R`), and the config-driven multi-stage tournament EV engine with per-player EV attribution (`R/tournament_ev.R`, with BBM7 wrappers in `R/tournament_ev_bbm7.R`), validated against BBMDB historical outcomes (`R/bbmdb_validator.R`). Tournament configs load, validate, and generate via `R/tournament_loader.R` / `R/tournament_config_generator.R`. Every implemented module has a testthat suite under `tests/testthat/`.
 
-Implementation milestones in roughly the right order:
-
-1. `R/data_pull.R` — wrap `nflreadr` loaders with caching ✓ (skeleton)
-2. `R/projections.R` v0 — naive consensus-only projections (ffanalytics passthrough) to ship a feed shape
-3. `R/publish.R` — JSON writer matching FEED_SPEC, push to bestball-bro-data via CI
-4. Extension changes to consume the new feed (separate repo)
-5. `R/projections.R` v1 — real Layer A methodology (top-down + component + comparables)
-6. `R/simulate.R` — Monte Carlo season sims with correlation structure
-7. `R/stage_engine.R` — Layer B implementation
-8. Backtest pipeline against BBM3–6
-9. Production scheduling
+Still stubbed (`Not yet implemented`): the Layer B building-block precompute and its publishers — `run_stage_engine()` / `precompute_building_blocks()` / `simulate_field_drafts()` in `R/stage_engine.R` and `publish_sim_draws()` / `publish_building_blocks()` / `publish_tournaments_index()` in `R/publish.R` — plus `apply_adjustments()` (user overrides) and `pull_underdog_adp()`. The tournament EV capability those stubs originally pointed at now lives in `R/tournament_ev.R`; the building-block wire format is defined in the upcoming EV-brain contract sprint.
 
 ## Layout
 
 ```
 R/
-  tournament_loader.R    # YAML loader + validator (WORKING)
-  data_pull.R            # nflverse + Underdog ADP loaders (partial)
-  projections.R          # Layer A (stub)
-  simulate.R             # Monte Carlo season sim (stub)
-  stage_engine.R         # Layer B (stub)
-  publish.R              # JSON + parquet feed writer (stub)
+  # Layer A — projections + season sims
+  data_pull.R            # nflverse + slate CSV loaders
+  projections.R          # v1 nflverse projection pipeline
+  rookies.R              # rookie projections via draft-capital comparables
+  blender.R              # v2 blended-consensus projections (Clay/ETR/LegUp)
+  calibration.R          # rank -> points calibration curves
+  simulate.R             # Monte Carlo season sims, empirical percentiles
+  scoring.R              # scoring-config loader + fantasy-point computation
+  player_match.R         # cross-source player name normalization
+  publish.R              # v1 JSON feed writer
+  publish_v2.R           # v2 feed + parquet draws writer
+
+  # Layer B — tournament pre-compute
+  field_empirics.R       # empirical distributions from scraped Underdog drafts
+  field_model.R          # synthetic opponent-field generator
+  correlation.R          # correlated cross-player weekly draws
+  lineup_optimizer.R     # best-ball optimal-lineup kernel
+  math_simulator.R       # per-team season score simulator
+  tournament_ev.R        # config-driven multi-stage tournament EV engine
+  tournament_ev_bbm7.R   # BBM7 back-compat wrappers
+  bbmdb_validator.R      # xAdv validation against BBMDB historical data
+  tournament_loader.R    # tournament YAML loader + validator
+  tournament_config_generator.R  # YAML generator from spec shorthand
+  stage_engine.R         # building-block precompute (stub — EV-brain contract sprint)
 
 inst/
   data/
     tournaments/         # Per-tournament configs (Sprint 3a schema)
       _common_rules.yaml
-      bbm7.yaml
-      eliminator_2026.yaml
-      frenchie3_superflex.yaml
+      _generator_input.yaml
+      bbm7.yaml, puppy.yaml, dachshund.yaml, mini_golden.yaml,
+      eliminator_2026.yaml, frenchie3.yaml, frenchie3_superflex.yaml,
       weekly_winners_2026.yaml
     slates/              # Per-slate manifest + CSV universes
+    sources/             # v2 blender source-feed manifest
   scoring/               # Per-scoring-system definitions
     half_ppr_underdog.yaml
   adjustments/           # User "knowing ball" overrides
     2026.yaml
   anchors/               # Anchor players for validation
     2026.yaml
+  scripts/               # Standalone diagnostic / smoke-test runners
 
 tests/                   # testthat tests
 .github/workflows/       # CI: scheduled feed rebuilds + publish to bestball-bro-data
