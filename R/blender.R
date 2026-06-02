@@ -83,7 +83,14 @@ blend_slate <- function(slate_id,
   )
 
   # --- Within-slate position_rank, VOR, tier ------------------------------
-  players_out <- .add_position_metrics(players_out)
+  # Replacement ranks are derived from this slate's starting lineup so
+  # that e.g. superflex values QBs against a ~2-starters-per-team
+  # baseline instead of the standard 1-QB baseline.
+  lineup_spec <- load_slate_lineup_spec(slate_id)
+  players_out <- .add_position_metrics(
+    players_out,
+    replacement_ranks = .replacement_ranks_from_lineup(lineup_spec)
+  )
 
   # --- Write JSON ----------------------------------------------------------
   feed <- .build_feed(
@@ -619,8 +626,47 @@ blend_slate <- function(slate_id,
 # Within-slate position metrics
 # ============================================================================
 
+#' Derive per-position VOR replacement ranks from a slate's starting lineup
+#'
+#' `replacement_rank[pos] = startable_slots[pos] * pod_size`, where
+#' startable slots are counted with a deliberate, legible flex-allocation
+#' heuristic:
+#'
+#' * Dedicated slots (QB/RB/WR/TE) count fully toward their position.
+#' * A flex slot whose eligible pool includes QB (superflex) counts fully
+#'   toward QB -- the second QB is the reason that slot exists, and in
+#'   practice it is filled by one.
+#' * RB/WR/TE flex slots are NOT allocated to any position. This keeps a
+#'   standard 1-QB lineup (QB1/RB2/WR3/TE1/FLEX) at exactly the v1
+#'   convention QB12/RB24/WR36/TE12 -- i.e. dedicated starters x pod --
+#'   treating thin, spread-out flex demand as already absorbed by those
+#'   baselines rather than pushing every flex-eligible position a tier down.
+#'
+#' This is the lineup-rule version of replacement level; an empirical
+#' (field-derived) refinement can replace the heuristic later.
+#'
+#' @param lineup_spec Lineup spec from [load_slate_lineup_spec()].
+#' @param pod_size Teams per draft pod (Underdog best ball default: 12).
+#' @return Named integer vector of replacement ranks for QB/RB/WR/TE.
 #' @keywords internal
-.add_position_metrics <- function(players_out) {
+.replacement_ranks_from_lineup <- function(lineup_spec, pod_size = 12L) {
+  startable <- c(QB = 0L, RB = 0L, WR = 0L, TE = 0L)
+  for (s in lineup_spec$slots) {
+    n <- as.integer(s$n)
+    if (length(s$eligible) == 1L && s$eligible %in% names(startable)) {
+      # Dedicated positional slot
+      startable[[s$eligible]] <- startable[[s$eligible]] + n
+    } else if ("QB" %in% s$eligible) {
+      # Superflex-style slot -> QB
+      startable[["QB"]] <- startable[["QB"]] + n
+    }
+    # else: RB/WR/TE flex -> unallocated (see heuristic above)
+  }
+  startable * pod_size
+}
+
+#' @keywords internal
+.add_position_metrics <- function(players_out, replacement_ranks) {
   # Build a flat data.frame for sorting.
   df <- data.frame(
     idx         = seq_along(players_out),
@@ -642,13 +688,15 @@ blend_slate <- function(slate_id,
     df$position_rank[sub[o]] <- seq_along(sub)
   }
 
-  # Replacement levels matching v1 convention (QB12 / RB24 / WR36 / TE12)
-  replacement <- c(QB = 12L, RB = 24L, WR = 36L, TE = 12L)
-  repl_value <- vapply(names(replacement), function(p) {
+  # Replacement value per position = season_mean at the slate's
+  # replacement rank (derived from its starting lineup by
+  # .replacement_ranks_from_lineup; standard 1-QB lineups reproduce the
+  # v1 convention QB12 / RB24 / WR36 / TE12).
+  repl_value <- vapply(names(replacement_ranks), function(p) {
     pts <- sort(df$season_mean[df$position == p], decreasing = TRUE,
                 na.last = NA)
-    rk  <- replacement[[p]]
-    if (length(pts) >= rk) pts[rk] else 0
+    rk  <- replacement_ranks[[p]]
+    if (rk >= 1L && length(pts) >= rk) pts[rk] else 0
   }, numeric(1))
 
   for (i in seq_along(players_out)) {
