@@ -68,7 +68,7 @@ test_that("BBM7 qualifier_round caps sum to the full $1.5M qualifier prize", {
   expect_equal(total, 1500000, tolerance = 1)
 })
 
-test_that("BBM7 championship bucket caps sum to the full ~$13.5M champ prize", {
+test_that("BBM7 championship bucket caps sum to exactly the $13.5M champ prize", {
   tcfg <- load_tournament("bbm7")
   # finalists
   fc <- bestballBroSim:::.tier_caps_from_yaml(
@@ -89,8 +89,29 @@ test_that("BBM7 championship bucket caps sum to the full ~$13.5M champ prize", {
   total <- sum(vapply(fc, function(c) c$n_slots * c$usd, numeric(1))) +
     sum(vapply(sl, function(c) c$n_slots * c$usd, numeric(1))) +
     sum(vapply(ql, function(c) c$n_slots * c$usd, numeric(1)))
-  expect_gt(total, 13.4e6)
-  expect_lt(total, 13.6e6)
+  # Exact since loser-bucket caps anchor at the bucket top -- the leading
+  # $0 pad for global ranks above each bucket no longer displaces tail
+  # money past the bucket end (was a $50,025 leak).
+  expect_equal(total, 13.5e6, tolerance = 1e-9)
+})
+
+test_that("loser-bucket caps whose tiers span the whole bucket conserve exactly", {
+  # Dachshund-shaped SF bucket: money tiers cover every slot (157-936 for a
+  # 780-slot bucket behind 156 finalists). Regression test for the leading-
+  # pad leak: without anchoring, the last 156 slots of the $24 tier fall
+  # past the bucket end and $3,744 leaks.
+  tiers <- list(
+    list(rank_from = 1L,   rank_to = 156L, usd = 1000, eligibility = "finalist"),
+    list(rank_from = 157L, rank_to = 312L, usd = 100,  eligibility = "semifinals_loser"),
+    list(rank_from = 313L, rank_to = 936L, usd = 24,   eligibility = "semifinals_loser"))
+  caps <- bestballBroSim:::.tier_caps_combined(
+    tiers, primary_eligibility = "semifinals_loser",
+    fallback_eligibility = "qualifier_advancer", total_slots = 780L)
+  expect_equal(sum(vapply(caps, function(c) c$n_slots, integer(1))), 780L)
+  expect_equal(sum(vapply(caps, function(c) c$n_slots * c$usd, numeric(1))),
+               156 * 100 + 624 * 24)                       # $30,576 -- no leak
+  # Bucket-local slot 1 (best SF loser) gets the top SF-loser prize.
+  expect_equal(caps[[1L]]$usd, 100)
 })
 
 # ---- Determinism (synthetic, fast) -----------------------------------------
