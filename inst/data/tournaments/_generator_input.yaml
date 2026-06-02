@@ -46,6 +46,23 @@ tournaments:
     image_url: https://storage.googleapis.com/underdog-inc/assets/tournaments/the-puppy.png
     cutoff_at: "2026-09-09T22:26:00Z"
 
+  # ---- The Puppy 2 (Season, 4-stage advancement; $5 fee, 750-seat final) ----
+  # puppy2.yaml is hand-written with the real fee / round IDs / payout table;
+  # the generator must not clobber it (same protection as BBM7/Dachshund).
+  - id: puppy2
+    display_name: "The Puppy 2"
+    underdog_tournament_id: e9f88543-f815-4db2-a076-1271fb35160c
+    slate_id: nfl_2026_season
+    stages: ["2/12", "1/10", "1/5"]
+    final_seats: 750
+    entry_fee_usd: 5
+    description: "Wen Puppy? - $100k to first!"
+    rules_url: https://app.underdogsports.com/rules/tournaments/the-puppy-2-2026
+    image_url: https://storage.googleapis.com/underdog-inc/assets/tournaments/the-puppy.png
+    cutoff_at: "2026-09-09T22:26:00Z"
+    rake_pct: 0.1111
+    write_to_disk: false
+
   # ---- The Dachshund (Season, 4-stage advancement) ----
   # dachshund.yaml now carries the real fee / max-entries / payout table, so
   # the generator must not clobber it (same protection as BBM7).
