@@ -1,0 +1,150 @@
+# The Puppy 2
+# Hand-written canonical config: real fee, max entries, round IDs, and payout
+# table from Underdog's rules page. The generator-input row exists only for
+# schema round-trip checks (write_to_disk: false) -- do NOT regenerate this
+# file, it would clobber the real payout table.
+
+tournament_id: puppy2
+underdog_tournament_id: e9f88543-f815-4db2-a076-1271fb35160c
+display_name: "The Puppy 2"
+description: "Wen Puppy? - $100k to first!"
+rules_url: https://app.underdogsports.com/rules/tournaments/the-puppy-2-2026
+image_url: https://storage.googleapis.com/underdog-inc/assets/tournaments/the-puppy.png
+
+slate_id: nfl_2026_season
+underdog_slate_id: a9c04e81-1ace-4b16-a31d-4c725a47f16f
+
+entry_fee_usd: 5
+total_field_size: 225000
+max_entries_per_user: 150
+draft_size: 12
+draft_rounds: 18
+pick_clock_seconds: 20
+rake_pct: 0.1111
+cutoff_at: "2026-09-09T22:26:00Z"
+
+inherits_common_rules: true
+
+scoring:
+  receptions: 0.5
+  receiving_td: 6
+  receiving_yard: 0.1
+  rushing_td: 6
+  rushing_yard: 0.1
+  passing_yard: 0.04
+  passing_td: 4
+  interception: -1
+  two_pt_conversion: 2
+  fumble_lost: -2
+
+roster:
+  total_slots: 18
+  starting_lineup:
+    QB: 1
+    RB: 2
+    WR: 3
+    TE: 1
+    FLEX: 1
+  bench: 10
+
+best_ball_lineup_rule:
+  flex_eligible: [RB, WR, TE]
+  flex_selection: highest_weekly_score_among_overflow_RB_WR_TE
+  description: |
+    Each week, lineup auto-set to maximize total points. FLEX filled by
+    highest weekly score among: (3rd-best RB on roster) OR (4th-best WR
+    on roster) OR (2nd-best TE on roster).
+
+simulator_output_schema:
+  primary_unit: per_player_total_ev
+  per_week_breakdown: diagnostic_only
+  rationale: |
+    Player value depends on advancement through multi-week structure. Per-week breakdowns derivable but not the natural unit.
+
+stages:
+  - id: qualifiers
+    abbreviation: Qual
+    underdog_round_id: 892eb407-04b1-4757-be2e-2aa186763390
+    round_number: 1
+    weeks: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
+    pod_structure: within_draft
+    pod_size: 12
+    seats_entering: 225000
+    advancement:
+      type: top_n_by_pod
+      "n": 2
+      ranking_metric: cumulative_starting_lineup_points_weeks_1_14
+    # Math: 225000 / 12 * 2 = 37500 advance
+
+  - id: quarterfinals
+    abbreviation: QF
+    underdog_round_id: 0732f5fb-3935-4ccf-94ed-2fc2e455e5e4
+    round_number: 2
+    weeks: [15]
+    pod_structure: random
+    pod_size: 10
+    seats_entering: 37500
+    advancement:
+      type: top_n_by_pod
+      "n": 1
+      ranking_metric: week_15_starting_lineup_points
+    # Math: 37500 / 10 = 3750 advance
+
+  - id: semifinals
+    abbreviation: SF
+    underdog_round_id: b79f3303-b1d0-422f-99e1-287d8981d30c
+    round_number: 3
+    weeks: [16]
+    pod_structure: random
+    pod_size: 5
+    seats_entering: 3750
+    advancement:
+      type: top_n_by_pod
+      "n": 1
+      ranking_metric: week_16_starting_lineup_points
+    # Math: 3750 / 5 = 750 advance
+
+  - id: championship
+    abbreviation: Final
+    underdog_round_id: 3066a596-3292-4a52-9ed0-bc578f00f214
+    round_number: 4
+    weeks: [17]
+    pod_structure: single_pod
+    pod_size: 750
+    seats_entering: 750
+    advancement:
+      type: rank_all
+      ranking_metric: week_17_starting_lineup_points
+
+payouts:
+  championship_round:
+    # Single-head: the Puppy 2 has no qualifier-round money -- all
+    # $1,000,000 is awarded by final progression depth + finalist ranking.
+    # Ranks are global standings ranks; eligibility tags map each tier to
+    # its progression bucket. BOTH loser buckets pay (SF losers $25; QF
+    # losers $5 -- a money-back floor on the $5 entry), so unlike the
+    # Dachshund there is no omitted $0 bucket; only qualifier exits win
+    # nothing and are unranked. Tier sum = $1,000,000 exactly.
+    tiers:
+      - {rank_from: 1,    rank_to: 1,     usd: 100000, eligibility: finalist}
+      - {rank_from: 2,    rank_to: 2,     usd: 50000,  eligibility: finalist}
+      - {rank_from: 3,    rank_to: 3,     usd: 25000,  eligibility: finalist}
+      - {rank_from: 4,    rank_to: 4,     usd: 17500,  eligibility: finalist}
+      - {rank_from: 5,    rank_to: 5,     usd: 15000,  eligibility: finalist}
+      - {rank_from: 6,    rank_to: 6,     usd: 14000,  eligibility: finalist}
+      - {rank_from: 7,    rank_to: 7,     usd: 13000,  eligibility: finalist}
+      - {rank_from: 8,    rank_to: 8,     usd: 12000,  eligibility: finalist}
+      - {rank_from: 9,    rank_to: 9,     usd: 11000,  eligibility: finalist}
+      - {rank_from: 10,   rank_to: 10,    usd: 10000,  eligibility: finalist}
+      - {rank_from: 11,   rank_to: 15,    usd: 7500,   eligibility: finalist}
+      - {rank_from: 16,   rank_to: 20,    usd: 5000,   eligibility: finalist}
+      - {rank_from: 21,   rank_to: 25,    usd: 3000,   eligibility: finalist}
+      - {rank_from: 26,   rank_to: 30,    usd: 2000,   eligibility: finalist}
+      - {rank_from: 31,   rank_to: 50,    usd: 1500,   eligibility: finalist}
+      - {rank_from: 51,   rank_to: 75,    usd: 1250,   eligibility: finalist}
+      - {rank_from: 76,   rank_to: 100,   usd: 1000,   eligibility: finalist}
+      - {rank_from: 101,  rank_to: 200,   usd: 750,    eligibility: finalist}
+      - {rank_from: 201,  rank_to: 400,   usd: 500,    eligibility: finalist}
+      - {rank_from: 401,  rank_to: 750,   usd: 400,    eligibility: finalist}
+      - {rank_from: 751,  rank_to: 3750,  usd: 25,     eligibility: semifinals_loser}
+      - {rank_from: 3751, rank_to: 37500, usd: 5,      eligibility: quarterfinals_loser}

@@ -59,7 +59,7 @@ inst/
     tournaments/         # Per-tournament configs (Sprint 3a schema)
       _common_rules.yaml
       _generator_input.yaml
-      bbm7.yaml, puppy.yaml, dachshund.yaml, mini_golden.yaml,
+      bbm7.yaml, puppy.yaml, puppy2.yaml, dachshund.yaml, mini_golden.yaml,
       eliminator_2026.yaml, frenchie3.yaml, frenchie3_superflex.yaml,
       weekly_winners_2026.yaml
     slates/              # Per-slate manifest + CSV universes
