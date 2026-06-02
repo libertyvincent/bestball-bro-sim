@@ -8,6 +8,7 @@
 ^LAYER_B\.md$
 ^FEED_SPEC\.md$
 ^ARCHITECTURE\.md$
+^docs$
 ^build$
 ^renv$
 ^renv\.lock$
