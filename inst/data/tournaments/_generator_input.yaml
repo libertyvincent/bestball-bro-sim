@@ -47,13 +47,16 @@ tournaments:
     cutoff_at: "2026-09-09T22:26:00Z"
 
   # ---- The Dachshund (Season, 4-stage advancement) ----
+  # dachshund.yaml now carries the real fee / max-entries / payout table, so
+  # the generator must not clobber it (same protection as BBM7).
   - id: dachshund
     display_name: "The Dachshund"
     underdog_tournament_id: 1f35c88b-e5c4-4b8c-b42a-db74f55d7a18
     slate_id: nfl_2026_season
     stages: ["2/12", "1/5", "1/6"]
     final_seats: 156
-    entry_fee_usd: 10
+    entry_fee_usd: 8
+    write_to_disk: false
 
   # ---- The Mini Golden (Season, 4-stage advancement) ----
   - id: mini_golden
