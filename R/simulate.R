@@ -163,15 +163,6 @@ simulate_slate <- function(feed, n_sims = 10000L, seed = NULL) {
   )
 }
 
-#' Run Monte Carlo season simulations (stub)
-#'
-#' Planned roster-level entry point for the Layer B precompute. Kept
-#' stubbed -- the active Monte Carlo path is [simulate_slate()], which
-#' consumes the blender's per-player output.
-#' @export
-run_season_sims <- function(projections, n_sims = 10000L) {
-  cli::cli_abort(c(
-    "Not yet implemented.",
-    i = "Use simulate_slate() for the active Monte Carlo path."
-  ))
-}
+# The run_season_sims() stub that used to live here is gone: the Layer B
+# precompute it was reserved for is now the EV building-blocks pipeline
+# (R/ev_blocks.R), which consumes simulate_slate()'s draws directly.

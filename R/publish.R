@@ -59,24 +59,8 @@ publish_manifest <- function(out_dir, slates, season) {
   }
 }
 
-# ---- Below: stubs awaiting v0.1+ ----
-
-#' Write sim draws to parquet
-#' @export
-publish_sim_draws <- function(sim_draws, out_dir = "../bestball-bro-data",
-                              season = NULL) {
-  cli::cli_abort("Not yet implemented (deferred until run_season_sims() lands)")
-}
-
-#' Write Layer B building blocks for one tournament to JSON
-#' @export
-publish_building_blocks <- function(tournament_id, building_blocks,
-                                     out_dir = "../bestball-bro-data") {
-  cli::cli_abort("Not yet implemented (deferred until Layer B precompute lands)")
-}
-
-#' Write tournaments_index.json
-#' @export
-publish_tournaments_index <- function(out_dir = "../bestball-bro-data") {
-  cli::cli_abort("Not yet implemented (deferred until contest-title aliases are settled)")
-}
+# The Layer B publisher stubs that used to live here (publish_sim_draws /
+# publish_building_blocks / publish_tournaments_index) are superseded by
+# publish_ev_blocks() in R/ev_blocks.R -- the EV building-blocks contract
+# (docs/ev_building_blocks_contract.md) defines the wire format they were
+# waiting on.

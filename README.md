@@ -23,7 +23,7 @@ Read these before changing anything structural.
 
 **Layer A and Layer B are implemented and tested.** Layer A: the v2 blended-consensus projections (`R/blender.R` + `R/calibration.R`), the Monte Carlo season simulator with empirical percentiles (`R/simulate.R`), and the v2 feed publisher (`R/publish_v2.R`). Layer B: field empirics from scraped Underdog drafts (`R/field_empirics.R`), the synthetic opponent-field model (`R/field_model.R`), correlated cross-player draws (`R/correlation.R`), the best-ball lineup optimizer (`R/lineup_optimizer.R`), the team season simulator (`R/math_simulator.R`), and the config-driven multi-stage tournament EV engine with per-player EV attribution (`R/tournament_ev.R`, with BBM7 wrappers in `R/tournament_ev_bbm7.R`), validated against BBMDB historical outcomes (`R/bbmdb_validator.R`). Tournament configs load, validate, and generate via `R/tournament_loader.R` / `R/tournament_config_generator.R`. Every implemented module has a testthat suite under `tests/testthat/`.
 
-Still stubbed (`Not yet implemented`): the Layer B building-block precompute and its publishers — `run_stage_engine()` / `precompute_building_blocks()` / `simulate_field_drafts()` in `R/stage_engine.R` and `publish_sim_draws()` / `publish_building_blocks()` / `publish_tournaments_index()` in `R/publish.R`. The tournament EV capability those stubs originally pointed at now lives in `R/tournament_ev.R`; the building-block wire format is defined in the upcoming EV-brain contract sprint.
+The EV building-blocks contract (sim ↔ extension interface) is implemented in `R/ev_blocks.R`: Artifact A (per-slate path-aligned `int16` joint-draws tensor + sidecar), Artifact B (per-tournament advancement/payout curves), the reference eval loop (curve-based marginal EV with common random numbers), and `publish_ev_blocks()` which registers everything in `_meta.json`. The frozen interface spec lives in [docs/ev_building_blocks_contract.md](docs/ev_building_blocks_contract.md). The old `stage_engine.R` / `publish.R` / `run_season_sims()` stubs that reserved this slot are gone.
 
 The v1 nflverse projection pipeline (`projections.R`, `rookies.R`) was retired — its output had no consumers. The extension reads the Clay legacy feed (built in `bestball-bro-data`) and Layer B is fed by v2's draws; see [ARCHITECTURE.md](ARCHITECTURE.md) for the cross-repo picture.
 
@@ -38,7 +38,7 @@ R/
   simulate.R             # Monte Carlo season sims, empirical percentiles
   scoring.R              # scoring-config loader + fantasy-point computation
   player_match.R         # cross-source player name normalization
-  publish.R              # _meta.json manifest writer + Layer B publisher stubs
+  publish.R              # _meta.json manifest writer
   publish_v2.R           # v2 feed + parquet draws writer (authors _meta.json)
 
   # Layer B — tournament pre-compute
@@ -52,7 +52,7 @@ R/
   bbmdb_validator.R      # xAdv validation against BBMDB historical data
   tournament_loader.R    # tournament YAML loader + validator
   tournament_config_generator.R  # YAML generator from spec shorthand
-  stage_engine.R         # building-block precompute (stub — EV-brain contract sprint)
+  ev_blocks.R            # EV building-blocks artifacts (draws tensor + curves + eval loop)
 
 inst/
   data/
