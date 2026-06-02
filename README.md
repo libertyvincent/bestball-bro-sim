@@ -10,8 +10,9 @@ R sim project producing the JSON projection + tournament-building-block feed con
 
 ## Design docs
 
-The design lives in three docs at the repo root:
+The design lives in four docs at the repo root:
 
+- [ARCHITECTURE.md](ARCHITECTURE.md) — cross-repo map: how this repo, `bestball-bro-data`, and the extension fit together
 - [LAYER_A.md](LAYER_A.md) — projection + season simulation methodology
 - [LAYER_B.md](LAYER_B.md) — tournament simulation engine (stage-based, config-driven)
 - [FEED_SPEC.md](FEED_SPEC.md) — wire format between this project and the extension
@@ -20,25 +21,25 @@ Read these before changing anything structural.
 
 ## Status
 
-**Layer A and Layer B are implemented and tested.** Layer A: v1 nflverse projections (`R/projections.R`, `R/rookies.R`), the v2 blended-consensus projections (`R/blender.R` + `R/calibration.R`), the Monte Carlo season simulator with empirical percentiles (`R/simulate.R`), and the v1/v2 feed publishers (`R/publish.R`, `R/publish_v2.R`). Layer B: field empirics from scraped Underdog drafts (`R/field_empirics.R`), the synthetic opponent-field model (`R/field_model.R`), correlated cross-player draws (`R/correlation.R`), the best-ball lineup optimizer (`R/lineup_optimizer.R`), the team season simulator (`R/math_simulator.R`), and the config-driven multi-stage tournament EV engine with per-player EV attribution (`R/tournament_ev.R`, with BBM7 wrappers in `R/tournament_ev_bbm7.R`), validated against BBMDB historical outcomes (`R/bbmdb_validator.R`). Tournament configs load, validate, and generate via `R/tournament_loader.R` / `R/tournament_config_generator.R`. Every implemented module has a testthat suite under `tests/testthat/`.
+**Layer A and Layer B are implemented and tested.** Layer A: the v2 blended-consensus projections (`R/blender.R` + `R/calibration.R`), the Monte Carlo season simulator with empirical percentiles (`R/simulate.R`), and the v2 feed publisher (`R/publish_v2.R`). Layer B: field empirics from scraped Underdog drafts (`R/field_empirics.R`), the synthetic opponent-field model (`R/field_model.R`), correlated cross-player draws (`R/correlation.R`), the best-ball lineup optimizer (`R/lineup_optimizer.R`), the team season simulator (`R/math_simulator.R`), and the config-driven multi-stage tournament EV engine with per-player EV attribution (`R/tournament_ev.R`, with BBM7 wrappers in `R/tournament_ev_bbm7.R`), validated against BBMDB historical outcomes (`R/bbmdb_validator.R`). Tournament configs load, validate, and generate via `R/tournament_loader.R` / `R/tournament_config_generator.R`. Every implemented module has a testthat suite under `tests/testthat/`.
 
-Still stubbed (`Not yet implemented`): the Layer B building-block precompute and its publishers — `run_stage_engine()` / `precompute_building_blocks()` / `simulate_field_drafts()` in `R/stage_engine.R` and `publish_sim_draws()` / `publish_building_blocks()` / `publish_tournaments_index()` in `R/publish.R` — plus `apply_adjustments()` (user overrides) and `pull_underdog_adp()`. The tournament EV capability those stubs originally pointed at now lives in `R/tournament_ev.R`; the building-block wire format is defined in the upcoming EV-brain contract sprint.
+Still stubbed (`Not yet implemented`): the Layer B building-block precompute and its publishers — `run_stage_engine()` / `precompute_building_blocks()` / `simulate_field_drafts()` in `R/stage_engine.R` and `publish_sim_draws()` / `publish_building_blocks()` / `publish_tournaments_index()` in `R/publish.R`. The tournament EV capability those stubs originally pointed at now lives in `R/tournament_ev.R`; the building-block wire format is defined in the upcoming EV-brain contract sprint.
+
+The v1 nflverse projection pipeline (`projections.R`, `rookies.R`) was retired — its output had no consumers. The extension reads the Clay legacy feed (built in `bestball-bro-data`) and Layer B is fed by v2's draws; see [ARCHITECTURE.md](ARCHITECTURE.md) for the cross-repo picture.
 
 ## Layout
 
 ```
 R/
   # Layer A — projections + season sims
-  data_pull.R            # nflverse + slate CSV loaders
-  projections.R          # v1 nflverse projection pipeline
-  rookies.R              # rookie projections via draft-capital comparables
+  data_pull.R            # slate manifest + CSV loaders
   blender.R              # v2 blended-consensus projections (Clay/ETR/LegUp)
   calibration.R          # rank -> points calibration curves
   simulate.R             # Monte Carlo season sims, empirical percentiles
   scoring.R              # scoring-config loader + fantasy-point computation
   player_match.R         # cross-source player name normalization
-  publish.R              # v1 JSON feed writer
-  publish_v2.R           # v2 feed + parquet draws writer
+  publish.R              # _meta.json manifest writer + Layer B publisher stubs
+  publish_v2.R           # v2 feed + parquet draws writer (authors _meta.json)
 
   # Layer B — tournament pre-compute
   field_empirics.R       # empirical distributions from scraped Underdog drafts
@@ -77,7 +78,7 @@ tests/                   # testthat tests
 
 ## Blender (v2) — `R/blender.R`
 
-v2 replaces the v1 nflverse weekly→season retrofit with a **blended consensus** built from three published source feeds. Per slate, the blender:
+The blender builds a **blended consensus** from three published source feeds (it replaced the retired v1 nflverse weekly→season retrofit). Per slate, the blender:
 
 1. Loads the slate's player universe from `inst/data/slates/<slate_id>.csv` (canonical UUIDs).
 2. Loads three source feeds from `https://libertyvincent.github.io/bestball-bro-data/sources/` (cached by URL sha256 under `~/.bestball-bro/cache`):
@@ -89,7 +90,7 @@ v2 replaces the v1 nflverse weekly→season retrofit with a **blended consensus*
 5. Generates per-week mean + std + percentiles by applying Clay's `weekly_team_scoring.json` as a per-week team-output multiplier. Opponent and home/away come from the same file (Clay carries the schedule).
 6. Writes `v2/projections/<slate_id>.json`.
 
-Top-level entry: `publish_v2()`. v1 (`publish_projections()` / the existing CI flow) keeps running in parallel — the extension switches over in a later sprint.
+Top-level entry: `publish_v2()`. It writes the per-slate feed JSON + parquet draws and authors the feed root's `_meta.json`. The extension cutover to this feed (`use_newfeed: true`) is a separate, coordinated sprint.
 
 ### Sources manifest
 
@@ -312,11 +313,10 @@ devtools::test()
 
 `.github/workflows/build_feed.yml` runs on a schedule (daily during draft season, weekly during regular season) and on manual dispatch. On each run it:
 
-1. Builds v1 projections (`generate_projections` per slate → `publish_manifest`) and stages them under `build/deploy/v1/`.
-2. Runs `publish_v2()` — blender + Monte Carlo simulator at `n_sims = 10000` — writing `build/deploy/v2/projections/<slate>.json` and `build/deploy/v2/draws/<slate>.parquet` and updating `build/deploy/_meta.json`.
-3. Moves the parquet draws out of `build/deploy/v2/draws/` to `build/artifacts/v2-draws/` so they don't get pushed to gh-pages.
-4. Pushes `build/deploy/` to the `gh-pages` branch of `bestball-bro-data` via `peaceiris/actions-gh-pages@v4` (`keep_files: true` to coexist with Clay/ETR/LegUp source feeds on the same branch).
-5. Uploads `build/artifacts/v2-draws/*.parquet` as `v2-draws-<run-id>` via `actions/upload-artifact@v4` (90-day retention). Layer B's CI in Sprint 3 will fetch these.
+1. Runs `publish_v2()` — blender + Monte Carlo simulator at `n_sims = 10000` — writing `build/deploy/v2/projections/<slate>.json` and `build/deploy/v2/draws/<slate>.parquet` and authoring `build/deploy/_meta.json` (season header + per-slate `v2_path` / `v2_sha256` / `v2_generated_at`).
+2. Moves the parquet draws out of `build/deploy/v2/draws/` to `build/artifacts/v2-draws/` so they don't get pushed to gh-pages.
+3. Pushes `build/deploy/` (only `v2/` + `_meta.json`) to the `gh-pages` branch of `bestball-bro-data` via `peaceiris/actions-gh-pages@v4` (`keep_files: true` to coexist with Clay/ETR/LegUp source feeds on the same branch).
+4. Uploads `build/artifacts/v2-draws/*.parquet` as `v2-draws-<run-id>` via `actions/upload-artifact@v4` (90-day retention). Layer B's CI in Sprint 3 will fetch these.
 
 Required secret: `BESTBALL_BRO_DATA_DEPLOY_KEY` in repo Settings → Secrets and variables → Actions. Generate a deploy key with write access to `bestball-bro-data` and paste the private half here.
 

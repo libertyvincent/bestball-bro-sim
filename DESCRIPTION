@@ -14,8 +14,6 @@ Roxygen: list(markdown = TRUE)
 Depends:
     R (>= 4.2.0)
 Imports:
-    nflreadr (>= 1.5.0),
-    nflfastR,
     jsonlite,
     yaml,
     httr2,
@@ -29,6 +27,7 @@ Imports:
     matrixStats,
     cli
 Suggests:
+    nflreadr (>= 1.5.0),
     testthat (>= 3.0.0),
     devtools,
     roxygen2

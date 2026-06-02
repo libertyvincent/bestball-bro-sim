@@ -14,40 +14,25 @@ This document specifies file structure, schemas, versioning, joining strategy, a
 
 The feed is a directory tree at the GitHub Pages root. Files are versioned by season and (where appropriate) by tournament.
 
+What the sim publishes today (to the data repo's `gh-pages` branch):
+
 ```
-bestball-bro-data/
+bestball-bro-data/  (gh-pages)
 ├── _meta.json                              # Multi-slate manifest — discovered first, drives everything else
-└── v1/
-    ├── tournaments_index.json              # Underdog contest title → tournament_id mapping
-    ├── projections/
-    │   ├── nfl_2026_season.json            # Layer A — one file per Underdog slate (slate CSV is canonical universe)
-    │   ├── nfl_2026_eliminator.json        # (added when the Eliminator slate is enabled in inst/data/slates/_manifest.yaml)
-    │   ├── nfl_2026_weekly_winners.json
-    │   └── nfl_2026_superflex.json
-    ├── sim_draws/
-    │   └── nfl_2026.parquet                # Layer A full sim draws (optional consumer; cross-slate for now)
-    ├── tournaments/
-    │   ├── bbm_2026.json                   # BBM stage config
-    │   ├── bbm_superflex_2026.json
-    │   ├── big_board_2026.json
-    │   ├── puppy_2026.json
-    │   └── weekly_winners_2026.json
-    ├── building_blocks/
-    │   ├── bbm_2026.json                   # Layer B output per tournament
-    │   ├── bbm_superflex_2026.json
-    │   ├── big_board_2026.json
-    │   ├── puppy_2026.json
-    │   └── weekly_winners_2026.json
-    ├── teams/
-    │   └── nfl_2026.json                   # 32 NFL teams (existing, unchanged)
-    ├── scoring/
-    │   └── half_ppr_underdog.json          # Scoring definition (referenced by tournament configs)
-    └── payouts/
-        ├── bbm_2026_finals.csv             # Detailed payout distributions
-        └── ww_week_1.csv                   # (referenced from tournament configs by URL)
+├── sources/                                # Clay/ETR/LegUp source feeds (built by the data repo; the blender's input)
+└── v2/
+    └── projections/
+        ├── nfl_2026_season.json            # Layer A — one file per Underdog slate (slate CSV is canonical universe)
+        ├── nfl_2026_eliminator.json
+        ├── nfl_2026_weekly_winners.json
+        └── nfl_2026_superflex.json
 ```
 
-The extension fetches `_meta.json` first to discover available files and detect updates, then fetches the file paths listed there. This avoids hardcoding paths in the extension. Tournament configs and building blocks are looked up dynamically per active draft via `tournaments_index.json` — adding a new tournament is publishing two files and updating the index, no extension change.
+The v2 parquet draws are deliberately **not** here — they ship as GitHub Actions artifacts (see "v2 outputs" below).
+
+Planned Layer B outputs (tournament configs, building blocks, `tournaments_index.json`, payout tables) were sketched at design time under a since-retired `v1/` namespace; their real paths and schemas are finalized in the EV-brain contract sprint. The original sketches are retained in the sections below as design references.
+
+The extension fetches `_meta.json` first to discover available files and detect updates, then fetches the file paths listed there. This avoids hardcoding paths in the extension. Tournament configs and building blocks will be looked up dynamically per active draft via `tournaments_index.json` — adding a new tournament is publishing two files and updating the index, no extension change.
 
 `[DECISION 1]` Single combined feed vs. multiple files?
 
@@ -70,7 +55,7 @@ Compatibility:
 | 1.x.y       | 1.x.z           | Compatible |
 | 1.x.y       | 2.x.z           | Incompatible — extension warns, falls back to projections-only mode |
 
-`_meta.json` at root is the multi-slate manifest. Each slate entry carries the v1 fields (written by `publish_manifest()`) and, once `publish_v2()` has run, a v2 triple registered by `.update_root_meta_for_v2()`:
+`_meta.json` at root is the multi-slate manifest, authored by `publish_v2()` (via `.update_root_meta_for_v2()`). Each slate entry registers the v2 projection feed:
 
 ```jsonc
 {
@@ -78,24 +63,17 @@ Compatibility:
   "generated_at": "2026-08-15T03:00:00Z",
   "slates": {
     "nfl_2026_season": {
-      // v1 (publish_manifest)
       "underdog_slate_id": "a9c04e81-1ace-4b16-a31d-4c725a47f16f",
-      "path":              "v1/projections/nfl_2026_season.json",
-      "version":           "1.0.0",
-      "sha256":            "...",
-      // v2 (.update_root_meta_for_v2 — added per slate after publish_v2())
       "v2_path":           "v2/projections/nfl_2026_season.json",
       "v2_sha256":         "...",
       "v2_generated_at":   "2026-08-15T03:05:00Z"
     }
-    // future slates (nfl_2026_eliminator, nfl_2026_weekly_winners,
-    // nfl_2026_superflex) appear here once enabled in
-    // inst/data/slates/_manifest.yaml.
+    // one entry per slate enabled in inst/data/slates/_manifest.yaml
   }
 }
 ```
 
-The v2 registration is additive — `.update_root_meta_for_v2()` preserves whatever the v1 path already wrote and only adds the `v2_path` / `v2_sha256` / `v2_generated_at` triple. The extension can read `_meta.json` blind and pick v1 or v2 by which fields exist.
+`.update_root_meta_for_v2()` creates `_meta.json` from scratch when it doesn't exist (filling `season` from the slate manifest) and updates it in place otherwise, preserving fields written by other publishers. The extension reads the file blind and picks the feed by which fields exist; entries on the live `gh-pages` `_meta.json` may also carry legacy v1 fields (`path` / `version` / `sha256`) from before the v1 pipeline was retired — those go away on the next data-repo cleanup.
 
 The `slates` map is open-ended — adding a new slate means dropping its CSV in `inst/data/slates/`, flipping `enabled: true` in the manifest YAML, and the next build produces a new entry here automatically.
 
@@ -112,66 +90,13 @@ Tournament configs and building-blocks files (Layer B output) are not represente
 
 ---
 
-## Projections schema (`v1/projections/<slate_id>.json`)
+## Projections schema
 
-One file per Underdog slate. `_meta` carries the slate identity; every
-row in `players` is a row in the slate's Underdog CSV, projected by our
-methodology — veterans via the nflverse weekly→season pipeline, rookies
-via historical-draft-capital comparables. `underdog_projected_points`
-is preserved as a reference / traceability field; it does NOT feed our
-`season.mean`, `season.std`, `vor`, or anything else we compute.
+**The v1 projection feed (`v1/projections/<slate_id>.json`) is retired** — its nflverse pipeline was removed from the sim repo and CI no longer publishes it. The live projection feed is **v2** (`v2/projections/<slate_id>.json`), produced by the blender + Monte Carlo simulator; see "v2 outputs (settled)" above and the Blender / Monte Carlo sections of the sim repo's README for what it contains.
 
-```jsonc
-{
-  "_meta": {
-    "slate_id":          "nfl_2026_season",
-    "underdog_slate_id": "a9c04e81-1ace-4b16-a31d-4c725a47f16f",
-    "display_name":      "NFL 2026 Season",
-    "season":            2026,
-    "scoring_id":        "half_ppr_underdog",
-    "methodology":       "v1_nflverse_veterans_comparables_rookies",
-    "generated_at":      "2026-08-15T03:00:00Z",
-    "model_version":     "1.0.0",
-    "player_count":      1449
-  },
-  "players": [
-    {
-      "underdog_id": "25cbfc55-cb8a-4589-85de-e91870f65952",
-      "gsis_id":     "00-0037077",
-      "name":        "Bijan Robinson",
-      "team":        "ATL",
-      "position":    "RB",
-      "season": {
-        "mean":   285.4,
-        "std":    62.5,
-        "median": 285.4,
-        "percentiles": { "p10": 205.3, "p25": 243.1, "p50": 285.4, "p75": 327.7, "p90": 365.5, "p95": 387.9 }
-      },
-      "vor":                       84.2,
-      "position_rank":             "RB1",
-      "adp":                       1.5,
-      "underdog_projected_points": 294.9
-    }
-    // ... player_count entries (~1449 for the Season slate)
-  ]
-}
-```
+The formal v2 consumption contract (required vs optional fields from the extension's point of view) is specified as part of the extension cutover sprint, not here.
 
-### Required vs optional fields
-
-**Required (extension parses these every load):**
-- `underdog_id` — canonical primary key
-- `name`, `team`, `position`
-- `season.mean`, `season.std`
-- `position_rank`, `vor`
-
-**Optional (used by richer recommendation logic; absent = feature degrades gracefully):**
-- `gsis_id` — present for veterans; **null for rookies** (no historical-stats match available). Extension can fall back to name-based joins.
-- `season.percentiles` — full empirical / parametric distribution; falls back to Normal(mean, std) if absent.
-- `adp` — taken from the slate CSV; null for free-agent rows Underdog hasn't priced yet.
-- `underdog_projected_points` — Underdog's own projection for the slate, kept as a reference field for sanity comparison and divergence reporting. **Do NOT feed this back into ranking** — it is not our methodology and treating it as such would silently overwrite our projection.
-
-The slate CSV is the canonical player universe — every UUID in the CSV gets a row in the feed, in the order yielded by our VOR sort.
+The slate CSV remains the canonical player universe — every UUID in the CSV gets a row in the feed.
 
 ### Correlation representation
 

@@ -34,7 +34,9 @@ run_stage_engine <- function(tournament_cfg, sim_draws, rosters = NULL) {
 #' FEED_SPEC.md for the exact output shape.
 #'
 #' @param tournament_cfg A `bbbro_tournament_def` object from [load_tournament()].
-#' @param projections Output of `generate_projections()`.
+#' @param projections Per-player projection table: one row per `underdog_id`
+#'   with `position`, season mean/std, and `adp` (produced by the v2
+#'   blender + simulator path).
 #' @param sim_draws Output of `run_season_sims()`.
 #' @param n_mock_drafts Number of mock drafts to simulate. Default 10000.
 #' @param n_sims_per_draft Season sims per drafted roster. Default 1000.
