@@ -196,16 +196,45 @@ cat(sprintf("  pod-draw noise floor (mean within-roster sim sd): $%.3f\n",
 
 # ---- 4. PATH-COUNT PROTOCOL ----------------------------------------------------
 # Marginal-EV ranking stability across disjoint path resamples at each N.
+#
+# The protocol's draft state must be a (near-)complete roster: marginal EV
+# of pick k is only well-posed when the roster's round scores sit inside
+# the curves' support. A partial roster (e.g. 8 picks in) scores in the
+# far-left tail of the complete-roster field -> g1 ~ 0 -> all marginal EVs
+# collapse to ~$0 and the ranking is pure noise (see the diagnostic
+# below; this is a contract-level finding -- the extension needs
+# ghost-pick roster completion for early/mid picks).
 stamp("path-count protocol")
-# Realistic mid-draft state: seat-1 snake roster 8 picks in, by ADP.
 adp <- vapply(feed$players, function(p) as.numeric(p$adp %||% NA_real_), numeric(1))
 names(adp) <- names(feed$players)
 adp <- adp[!is.na(adp)]
 adp <- adp[names(adp) %in% pool_draws$player_ids]
 adp_order <- names(sort(adp))
-snake_picks <- c(1L, 24L, 25L, 48L, 49L, 72L, 73L, 96L)
-roster8 <- adp_order[snake_picks]
-candidates <- setdiff(adp_order, roster8)[1:20]
+# Seat-1 snake picks in a 12-team draft, rounds 1-17: drafting the 18th.
+snake_seat1 <- function(rounds) {
+  vapply(seq_len(rounds), function(r)
+    if (r %% 2L == 1L) (r - 1L) * 12L + 1L else r * 12L, integer(1))
+}
+roster17 <- adp_order[snake_seat1(17L)]
+# Realistic candidates: at seat-1's 18th pick (overall pick 205 in a
+# 12-team draft), the available players are those with ADP rank >= ~205 --
+# NOT the top of the board (those are long gone). Ranking studs that could
+# never be available would inflate the marginals and the regret scale.
+pick18_overall <- 17L * 12L + 1L                       # 205
+candidates <- setdiff(adp_order, roster17)
+candidates <- candidates[candidates %in% adp_order[pick18_overall:length(adp_order)]][1:20]
+candidates <- candidates[!is.na(candidates)]
+
+# Diagnostic: the partial-roster degeneracy (8 picks in, realistic pick-97 candidates).
+roster8 <- adp_order[snake_seat1(8L)]
+pick9_overall <- 8L * 12L + 1L                         # 97
+cand8 <- setdiff(adp_order, roster8)
+cand8 <- cand8[cand8 %in% adp_order[pick9_overall:length(adp_order)]][1:20]
+rk8 <- rank_marginal_ev(roster8, cand8, pool_draws, curves_p2, lineup_spec)
+cat(sprintf("\n[partial-roster diagnostic] 8-pick roster: best marginal EV $%.4f, median $%.4f\n",
+            max(rk8$marginal_ev), stats::median(rk8$marginal_ev)))
+cat("  -> naive marginal EV is noise-level mid-draft; the extension needs roster\n")
+cat("     completion (ghost picks) before the EV ranking takes over from VOR.\n\n")
 
 kendall_tau <- function(r1, r2) {
   common <- intersect(r1, r2)
@@ -221,10 +250,10 @@ topk_overlap <- function(r1, r2, k = 10L) {
 # (full-pool marginal EV of the resample's #1 pick). Converts ranking
 # churn into dollars: churn among near-equal candidates is harmless;
 # churn that costs EV is not.
-rk_full <- rank_marginal_ev(roster8, candidates, pool_draws, curves_p2, lineup_spec)
+rk_full <- rank_marginal_ev(roster17, candidates, pool_draws, curves_p2, lineup_spec)
 full_mev <- stats::setNames(rk_full$marginal_ev, rk_full$underdog_id)
 best_full <- max(full_mev)
-cat(sprintf("\nFull-pool (N=%d) top-20 marginal EVs: best $%.3f, median $%.3f, IQR $%.3f\n",
+cat(sprintf("\nFull-pool (N=%d) top-20 marginal EVs (17-pick roster): best $%.3f, median $%.3f, IQR $%.3f\n",
             POOL_PATHS, best_full, stats::median(full_mev),
             stats::IQR(full_mev)))
 
@@ -235,7 +264,7 @@ for (N in PROTOCOL_NS) {
   for (k in seq_len(k_max)) {
     idx <- ((k - 1L) * N + 1L):(k * N)
     sub <- .subset_paths(pool_draws, idx)
-    rk <- rank_marginal_ev(roster8, candidates, sub, curves_p2, lineup_spec)
+    rk <- rank_marginal_ev(roster17, candidates, sub, curves_p2, lineup_spec)
     rankings[[k]] <- rk$underdog_id
     # Regret of this resample's top pick, valued on the full pool.
     regrets[k] <- best_full - full_mev[[rk$underdog_id[1L]]]
@@ -257,13 +286,17 @@ for (N in PROTOCOL_NS) {
 cat("\n=== PATH-COUNT PROTOCOL (Puppy 2 marginal-EV ranking stability) ===\n")
 print(protocol, row.names = FALSE, digits = 3)
 # Primary criterion: the decision metric -- the resample's top pick costs
-# (almost) nothing vs the full-pool best. Secondary: rank-order stability
-# (informational; near-ties churn harmlessly forever).
-REGRET_TOL <- 0.05   # $0.05 on a ~$4.44 mean entry EV (~1%)
-ok <- protocol$mean_pick_regret_usd <= REGRET_TOL
+# (almost) nothing vs the full-pool best, in absolute $ AND relative to the
+# best marginal EV (so a degenerate all-zeros state can't auto-pass).
+# Secondary: rank-order stability (informational; near-ties churn
+# harmlessly forever).
+REGRET_TOL_USD <- 0.05
+REGRET_TOL_REL <- 0.10                    # <= 10% of the best marginal EV
+ok <- protocol$mean_pick_regret_usd <= REGRET_TOL_USD &
+      protocol$mean_pick_regret_usd <= REGRET_TOL_REL * best_full
 N_CHOSEN <- if (any(ok)) min(protocol$n_paths[ok]) else max(protocol$n_paths)
-cat(sprintf("\nCHOSEN N = %d  (smallest N with mean top-pick regret <= $%.2f)\n",
-            N_CHOSEN, REGRET_TOL))
+cat(sprintf("\nCHOSEN N = %d  (smallest N with mean top-pick regret <= $%.2f and <= %.0f%% of best marginal)\n",
+            N_CHOSEN, REGRET_TOL_USD, 100 * REGRET_TOL_REL))
 
 # ---- 5. Publish artifacts at the chosen N + _meta registration -----------------
 stamp(sprintf("publishing artifacts at N = %d to %s", N_CHOSEN, OUT_DIR))
