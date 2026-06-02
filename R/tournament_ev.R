@@ -604,9 +604,13 @@ compute_team_ev <- function(pod_rosters, team_entry_id, positions,
 
 #' Build a tier-cap table from a YAML tiers list filtered by eligibility.
 #' Returns `{n_slots, usd}` segments in rank order; pads to `total_slots`
-#' with a $0 catch-all.
+#' with a $0 catch-all. With `anchor_to_first = TRUE` the table starts at
+#' the first matching tier's `rank_from` instead of rank 1 -- used for
+#' loser buckets, whose tiers carry global standings ranks but whose caps
+#' are indexed bucket-locally (slot 1 = best team in the bucket).
 #' @keywords internal
-.tier_caps_from_yaml <- function(tiers, eligibility = NULL, total_slots = NULL) {
+.tier_caps_from_yaml <- function(tiers, eligibility = NULL, total_slots = NULL,
+                                 anchor_to_first = FALSE) {
   rows <- list()
   for (t in tiers) {
     if (!is.null(eligibility)) {
@@ -618,13 +622,17 @@ compute_team_ev <- function(pod_rosters, team_entry_id, positions,
       usd = as.numeric(t$usd))
   }
   rows <- rows[order(vapply(rows, `[[`, integer(1), "rank_from"))]
+  offset <- if (isTRUE(anchor_to_first) && length(rows) > 0L) {
+    rows[[1L]]$rank_from - 1L
+  } else 0L
   caps <- list(); cursor <- 1L
   for (r in rows) {
-    if (r$rank_from > cursor) {
-      caps[[length(caps) + 1L]] <- list(n_slots = r$rank_from - cursor, usd = 0)
+    rf <- r$rank_from - offset; rt <- r$rank_to - offset
+    if (rf > cursor) {
+      caps[[length(caps) + 1L]] <- list(n_slots = rf - cursor, usd = 0)
     }
-    caps[[length(caps) + 1L]] <- list(n_slots = r$rank_to - r$rank_from + 1L, usd = r$usd)
-    cursor <- r$rank_to + 1L
+    caps[[length(caps) + 1L]] <- list(n_slots = rt - rf + 1L, usd = r$usd)
+    cursor <- rt + 1L
   }
   if (!is.null(total_slots) && cursor <= total_slots) {
     caps[[length(caps) + 1L]] <- list(n_slots = total_slots - cursor + 1L, usd = 0)
@@ -636,11 +644,20 @@ compute_team_ev <- function(pod_rosters, team_entry_id, positions,
 #' their $$ for as many slots as they natively span; the rest of the
 #' bucket falls back to the `fallback_eligibility` tier's $$. `primary_slots`
 #' is derived from the primary tiers' own rank widths (no hardcoded counts).
+#'
+#' The primary tiers are anchored at the bucket top (`anchor_to_first`):
+#' their `rank_from` values are global standings ranks (e.g. SF losers
+#' start at rank `final_seats + 1`), but the caps table is consumed
+#' bucket-locally by [.range_avg_payout()]. Without the anchor, the global
+#' ranks above the bucket become a leading $0 pad that pushes the bucket's
+#' tail money past `total_slots`, where it silently leaks out of the pool
+#' (BBM7: $50,025/sim; Dachshund: $3,744/sim -- enough to fail the money-
+#' conservation gate).
 #' @keywords internal
 .tier_caps_combined <- function(tiers, primary_eligibility, fallback_eligibility,
                                 total_slots) {
   primary_caps <- .tier_caps_from_yaml(tiers, eligibility = primary_eligibility,
-                                       total_slots = NULL)
+                                       total_slots = NULL, anchor_to_first = TRUE)
   primary_n <- sum(vapply(primary_caps, `[[`, integer(1), "n_slots"))
   fallback_usd <- 0
   for (t in tiers) {
