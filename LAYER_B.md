@@ -1,5 +1,21 @@
 # Layer B — Tournament Simulation & Live Recommendation
 
+> **Status note (June 2026):** Layer B is implemented, but not exactly as this
+> document designed it. What carried forward: the engine + config split (the
+> config-driven tournament EV engine is `R/tournament_ev.R`, configs are YAML
+> under `inst/data/tournaments/` via `R/tournament_loader.R`), the field model
+> (`R/field_empirics.R` + `R/field_model.R`), correlated draws
+> (`R/correlation.R`), and the best-ball lineup kernel (`R/lineup_optimizer.R`).
+> What was **superseded**: the building-block precompute designed below
+> (replacement levels / scarcity curves / leverage scores / the BRO score and
+> its multipliers). Its replacement is the **EV building-blocks contract** —
+> per-slate path-aligned joint-draws tensor + per-tournament advancement/payout
+> curves + a curve-based marginal-EV combine — frozen in
+> [docs/ev_building_blocks_contract.md](docs/ev_building_blocks_contract.md) and
+> implemented in `R/ev_blocks.R` (artifacts registered in `_meta.json`; see
+> [FEED_SPEC.md](FEED_SPEC.md)). This document is kept as the design record for
+> the decisions that led there.
+
 ## Purpose
 
 Layer B bridges projections (Layer A) and the live draft experience (Layer C). It answers: **"Given my current roster, the picks already made, and the players still available, what is the expected payout of picking each available player right now?"**

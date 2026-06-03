@@ -21,18 +21,21 @@ bestball-bro-data/  (gh-pages)
 ├── _meta.json                              # Multi-slate manifest — discovered first, drives everything else
 ├── sources/                                # Clay/ETR/LegUp source feeds (built by the data repo; the blender's input)
 └── v2/
-    └── projections/
-        ├── nfl_2026_season.json            # Layer A — one file per Underdog slate (slate CSV is canonical universe)
-        ├── nfl_2026_eliminator.json
-        ├── nfl_2026_weekly_winners.json
-        └── nfl_2026_superflex.json
+    ├── projections/
+    │   ├── nfl_2026_season.json            # Layer A — one file per Underdog slate (slate CSV is canonical universe)
+    │   ├── nfl_2026_eliminator.json
+    │   ├── nfl_2026_weekly_winners.json
+    │   └── nfl_2026_superflex.json
+    └── ev/                                 # Layer B — EV building-block artifacts (per the frozen contract)
+        ├── nfl_2026_season_draws.bin       #   Artifact A: path-aligned int16 joint-draws tensor (~5 MB at N=500)
+        ├── nfl_2026_season_draws.json      #   Artifact A sidecar (player index, axis metadata)
+        ├── puppy2_curves.json              #   Artifact B: one curves file per tournament on the slate
+        └── dachshund_curves.json
 ```
 
 The v2 parquet draws are deliberately **not** here — they ship as GitHub Actions artifacts (see "v2 outputs" below).
 
-Planned Layer B outputs (tournament configs, building blocks, `tournaments_index.json`, payout tables) were sketched at design time under a since-retired `v1/` namespace; their real paths and schemas are finalized in the EV-brain contract sprint. The original sketches are retained in the sections below as design references.
-
-The extension fetches `_meta.json` first to discover available files and detect updates, then fetches the file paths listed there. This avoids hardcoding paths in the extension. Tournament configs and building blocks will be looked up dynamically per active draft via `tournaments_index.json` — adding a new tournament is publishing two files and updating the index, no extension change.
+The extension fetches `_meta.json` first to discover available files and detect updates, then fetches the file paths listed there. This avoids hardcoding paths in the extension. EV artifacts are looked up per active draft straight from `_meta.json`: the slate entry carries the draws paths, and its `tournaments` map (keyed by `tournament_id`, resolvable from the draft's `round_id` via the tournament configs) carries each tournament's curves path. Adding a new tournament is publishing one curves file and re-running the publisher — no extension change.
 
 `[DECISION 1]` Single combined feed vs. multiple files?
 
@@ -64,9 +67,20 @@ Compatibility:
   "slates": {
     "nfl_2026_season": {
       "underdog_slate_id": "a9c04e81-1ace-4b16-a31d-4c725a47f16f",
+      // Layer A (written by publish_v2)
       "v2_path":           "v2/projections/nfl_2026_season.json",
       "v2_sha256":         "...",
-      "v2_generated_at":   "2026-08-15T03:05:00Z"
+      "v2_generated_at":   "2026-08-15T03:05:00Z",
+      // Layer B EV building blocks (written by publish_ev_blocks)
+      "v2_draws_path":           "v2/ev/nfl_2026_season_draws.bin",
+      "v2_draws_sha256":         "...",
+      "v2_draws_sidecar_path":   "v2/ev/nfl_2026_season_draws.json",
+      "v2_draws_sidecar_sha256": "...",
+      "v2_draws_generated_at":   "2026-08-15T03:20:00Z",
+      "tournaments": {
+        "puppy2":    { "curves_path": "v2/ev/puppy2_curves.json",    "curves_sha256": "..." },
+        "dachshund": { "curves_path": "v2/ev/dachshund_curves.json", "curves_sha256": "..." }
+      }
     }
     // one entry per slate enabled in inst/data/slates/_manifest.yaml
   }
@@ -86,7 +100,7 @@ The `slates` map is open-ended — adding a new slate means dropping its CSV in 
 
 Separately, `publish_field_empirics()` writes **`v2/field_empirics/<slate_id>.json`** per slate (position-count, stack-pattern, and pick-slot distributions from scraped Underdog drafts) under the local build tree. These are local-only for now — not yet pushed to gh-pages and not registered in `_meta.json`.
 
-Tournament configs and building-blocks files (Layer B output) are not represented in the current `_meta.json` schema — `publish_building_blocks()` is still a stub, and they re-enter when the Layer B building-block precompute ships. Their wire format is finalized in the EV-brain contract sprint, not here.
+Layer B's outputs ARE represented in `_meta.json`: `publish_ev_blocks()` (R/ev_blocks.R) writes the per-slate `v2_draws_*` keys and the per-tournament `tournaments.<id>.curves_*` keys shown above. Their wire format is frozen in [docs/ev_building_blocks_contract.md](docs/ev_building_blocks_contract.md); the "EV building-block artifacts" section below summarizes it.
 
 ---
 
@@ -110,108 +124,112 @@ The slate CSV remains the canonical player universe — every UUID in the CSV ge
 
 ---
 
-## Sim draws schema (`v1/sim_draws/nfl_2026.parquet`)
+## Sim draws schema (`v2/draws/<slate_id>.parquet`)
 
-Parquet for efficiency (~80KB per player × 300 players × 10k draws would be ~240MB as JSON; ~20MB as Parquet).
+Parquet, written by `publish_v2()`, one file per slate. **Server-side artifact only** (GitHub Actions artifact, never gh-pages — see "v2 outputs" above).
 
-Schema:
+Schema (long format, the actual columns):
 
 | Column | Type | Notes |
 |--------|------|-------|
 | `underdog_id` | string | join key |
-| `sim_id` | int | 0 .. n_sims-1 |
-| `season_points` | float | half-PPR season total |
-| `games_played` | int | |
-| `weekly_points` | list[float] | length 17 |
+| `sim_idx` | int | 1 .. n_sims |
+| `week` | int | 1 .. 18 |
+| `draw_value` | double | half-PPR points for that (player, sim, week); 0 on byes |
 
-Joint correlations are preserved by `sim_id` — sim_id=0 across all players represents one self-consistent simulated season.
+These are **Layer A (per-player independent) draws** — cross-player correlation is induced downstream by `sample_correlated_draws()` (R/correlation.R). The `sim_idx` axis is NOT a shared "world" across players; do not treat it as one. The path-aligned, correlated representation the extension consumes is Artifact A below.
 
-Consumers: Layer B offline (R), future DFS optimizer (whatever language). Extension does **not** fetch this file — it's for advanced tooling.
-
-`[DECISION 3]` Publish sim_draws at all for v1, or defer?
-
-*Recommendation:* **Publish.** It's the only way Layer B's offline pipeline can do anything sophisticated with correlations, and it costs almost nothing to write once the sim already ran.
+Consumers: Layer B offline (R) only. The extension does **not** fetch this file.
 
 ---
 
-## Building blocks schema (`v1/building_blocks/bbm_2026.json`)
+## EV building-block artifacts (`v2/ev/*`)
 
-Layer B's offline pre-computed outputs:
+> The original "building blocks" design (replacement levels / scarcity curves /
+> leverage scores / payout curve, under a `v1/building_blocks/` namespace) was
+> **superseded** by the EV building-blocks contract before it ever shipped. The
+> frozen interface is [docs/ev_building_blocks_contract.md](docs/ev_building_blocks_contract.md);
+> the implementation is `R/ev_blocks.R` (publisher: `publish_ev_blocks()`).
+> Summary of what's actually on the wire:
+
+**Artifact A — joint draws (per slate).** Two files:
+
+- `v2/ev/<slate_id>_draws.bin` — raw little-endian `int16` tensor, axis order
+  `[path][player][week]` (path-major; a path's full board is contiguous),
+  scores ×10 (0.1-pt resolution). ~5 MB at the shipped N = 500 paths.
+- `v2/ev/<slate_id>_draws.json` — sidecar:
 
 ```jsonc
 {
-  "_meta": {
-    "season": 2026,
-    "tournament": "bbm_2026",
-    "projections_version": "0.3.0",
-    "model_version": "0.3.0",
-    "generated_at": "2026-08-15T05:00:00Z",
-    "n_mock_drafts": 10000,
-    "n_season_sims_per_draft": 1000
-  },
-  "replacement_levels": {
-    // position × roster_archetype × week → fantasy point threshold
-    "QB":   { "zero_qb":     { "1": 12.4, "2": 13.1, ...}, "modal": { ... } },
-    "RB":   { "zero_rb":     { "1": 7.8,  ...}, "anchor_rb": { ... }, "modal": { ... } },
-    "WR":   { ... },
-    "TE":   { ... }
-  },
-  "scarcity_curves": {
-    // position × pick_number → marginal value vs. waiting
-    "QB":   [ 0.0, 0.0, ..., 4.2, 5.1, ... ],   // index = pick_number (1..216)
-    "RB":   [ ... ],
-    "WR":   [ ... ],
-    "TE":   [ ... ]
-  },
-  "reference_constructions": [
-    {
-      "id": "zero_rb_slot_3",
-      "slot": 3,
-      "round_position_priors": ["WR","WR","WR","RB","WR","TE","RB","QB", ...],
-      "historical_advance_rate": 0.043,
-      "weight": 0.18
-    }
-    // ... ~50 constructions (12 slots × ~4 archetypes each)
-  ],
-  "marginal_contributions": {
-    // Keyed by (underdog_id, construction_id, pick_number)
-    // For each cell: marginal advance probability of adding this player
-    //                to this construction at this pick number
-    "2b0cbe83-48a2-...": {
-      "zero_rb_slot_3":   { "1": 0.0042, "13": 0.0031, "25": 0.0019, ...},
-      "anchor_rb_slot_3": { "1": 0.0061, "13": 0.0044, ...}
-    }
-    // ... per player × construction × ~18 pick checkpoints
-  },
-  "leverage_scores": {
-    // Per player: leverage score (0-1, higher = more uniqueness EV)
-    "2b0cbe83-48a2-...": 0.32,
-    // ...
-  },
-  "payout_curve": {
-    // advance_probability → expected_dollar_payout
-    "0.001": 12.50, "0.005": 24.10, "0.01": 41.20, ...
-  }
+  "slate_id": "nfl_2026_season",
+  "dtype": "int16", "endianness": "little",
+  "axis_order": ["path", "player", "week"],
+  "n_paths": 500, "n_players": 295, "n_weeks": 17,
+  "weeks": [1, 2, ..., 17],
+  "quant_scale": 10,
+  "player_index": { "<underdog_id>": 0, ... },   // 0-based tensor row index
+  "positions":    { "<underdog_id>": "RB", ... },
+  "generated_at": "..."
 }
 ```
 
-The extension consumes `marginal_contributions` + `leverage_scores` + `payout_curve` to compute live pick EV.
+**Hard invariant:** path *i* is the same simulated world for every player — the
+shared path axis is the correlation mechanism. The sim guarantees it at build
+time (one joint correlated draw) and tests it (stack correlation + structural
+no-reshuffle); the extension must never reorder paths per player.
 
-`[DECISION 4]` Granularity of `marginal_contributions` table?
+**Artifact B — curves (per tournament).** `v2/ev/<tournament_id>_curves.json`:
 
-Coarse (every 3 picks: 1, 4, 7, ..., 217) keeps the table small (~300 players × 50 constructions × 72 picks = ~1M entries, ~30MB JSON). Fine (every pick: 1..216) is 3× larger.
+```jsonc
+{
+  "tournament_id": "puppy2",
+  "slate_id": "nfl_2026_season",
+  "stage_weeks": { "r1": [1, ..., 14], "r2": [15], "r3": [16], "r4": [17] },
+  "structure":   { "pod_sizes": [12, 10, 5, 750], "seats": [225000, 37500, 3750, 750], "advance_n": [2, 1, 1] },
+  "built_from":  { "n_field": 2700, "n_sims": 400 },
+  "curves": {
+    "g1":        { "x": [...], "y": [...] },   // P(advance qualifier | R1)
+    "g2":        { "x": [...], "y": [...] },   // P(advance QF | R2)
+    "g3":        { "x": [...], "y": [...] },   // P(advance SF | R3)
+    "payout_qf": { "x": [...], "y": [...] },   // E[$ | exit at QF with R2]
+    "payout_sf": { "x": [...], "y": [...] },   // E[$ | exit at SF with R3]
+    "h_final":   { "x": [...], "y": [...] }    // E[$ | finalist with R4]
+  },
+  "generated_at": "..."
+}
+```
 
-*Recommendation:* **Every 3 picks**, with linear interpolation in the extension when the user's actual pick falls between checkpoints. The marginal contribution surface is smooth — interpolation is fine.
+Curves are lookup tables — evaluate with linear interpolation, clamped at the
+endpoints. The extension's per-path combine is:
+
+```
+$ = g1(R1) · [ (1−g2(R2))·payout_qf(R2) + g2(R2)·(1−g3(R3))·payout_sf(R3) + g2(R2)·g3(R3)·h_final(R4) ]
+```
+
+EV = mean over paths; marginal EV of a candidate = EV(roster + X) − EV(roster)
+on the **same paths** (common random numbers). The R reference implementation
+(`roster_round_scores()` / `evaluate_roster_curve_ev()` / `rank_marginal_ev()`)
+is the executable spec.
+
+**Known caveats for the extension build** (from the Track-1 validation, sim PR #27):
+
+1. Naive marginal EV is degenerate on partial rosters (early/mid picks) — the
+   extension needs ghost-pick roster completion before the EV ranking replaces VOR.
+2. The curves over-price high-variance/unique rosters (+$1.87 mean on a $4.44
+   field-mean EV); chalky rosters are priced to within pod noise. v1 ships with
+   this caveat; uniqueness-conditioned curves are the v2 remedy.
 
 ---
 
-## Tournament schema (`v1/tournaments/bbm_2026.json`)
+## Tournament configs (sim-side YAML, not published)
 
-The Layer B tournament YAML config, serialized to JSON for the extension to consume. The extension uses it for:
-- Decomposing BRO score (what payout structure does the advance prob convert against?)
-- Displaying tournament-specific UI elements (round-by-round advancement targets)
-
-Structure mirrors the YAML in `LAYER_B.md`.
+Tournament rules (stages, pods, payouts, round UUIDs) live as YAML under the sim
+repo's `inst/data/tournaments/`, loaded and validated by `R/tournament_loader.R`.
+They are **not published to the feed**: everything the extension needs from a
+tournament's structure is baked into its Artifact B curves file
+(`stage_weeks`, `structure`, and the six curves — see "EV building-block
+artifacts" above). Round-ID → tournament resolution also happens sim-side at
+publish time; the extension only needs the `tournaments` map in `_meta.json`.
 
 ---
 
@@ -257,69 +275,32 @@ The extension's existing `BBBRO_MATCH` module joins feed records to Underdog app
 
 ---
 
-## Tournament resolution (`v1/tournaments_index.json`)
+## Tournament resolution (via `_meta.json`)
 
-The extension's existing `_resolveContestTitle()` returns a contest title from one of four sources (`draft.title`, `tournament_rounds`, `weekly_winners`, `tournaments` cache). Matching that title to one of our tournament configs is a lookup in `tournaments_index.json`.
+> The `v1/tournaments_index.json` + `building_blocks_url` + contest-title-matching
+> design originally specced here was superseded along with the rest of the v1
+> building-blocks namespace. Resolution now runs off identifiers, not titles.
 
-### Schema
+The extension knows two identifiers for a live draft: the **slate UUID** and the
+draft's **round UUID** (from the Underdog draft URL / API). Resolution:
 
-```jsonc
-{
-  "_meta": { "version": "1.0.0", "generated_at": "2026-08-15T03:00:00Z" },
-  "tournaments": {
-    "bbm_2026": {
-      "name": "Best Ball Mania VII",
-      "season": 2026,
-      "underdog_contest_titles": [
-        "Best Ball Mania",
-        "Best Ball Mania VII",
-        "BBM VII",
-        "BBM7"
-      ],
-      "config_url": "v1/tournaments/bbm_2026.json",
-      "building_blocks_url": "v1/building_blocks/bbm_2026.json"
-    },
-    "bbm_superflex_2026": {
-      "name": "Best Ball Mania Superflex",
-      "season": 2026,
-      "underdog_contest_titles": [
-        "Best Ball Mania Superflex",
-        "BBM Superflex"
-      ],
-      "config_url": "v1/tournaments/bbm_superflex_2026.json",
-      "building_blocks_url": "v1/building_blocks/bbm_superflex_2026.json"
-    },
-    "big_board_2026": {
-      "name": "The Big Board",
-      "season": 2026,
-      "underdog_contest_titles": ["The Big Board", "Big Board"],
-      "config_url": "v1/tournaments/big_board_2026.json",
-      "building_blocks_url": "v1/building_blocks/big_board_2026.json"
-    },
-    "puppy_2026":          { "name": "The Puppy",         "season": 2026, "underdog_contest_titles": ["The Puppy", "Puppy"],                       "config_url": "v1/tournaments/puppy_2026.json",          "building_blocks_url": "v1/building_blocks/puppy_2026.json" },
-    "weekly_winners_2026": { "name": "Weekly Winners",    "season": 2026, "underdog_contest_titles": ["Weekly Winners", "Weekly Winner"],          "config_url": "v1/tournaments/weekly_winners_2026.json", "building_blocks_url": "v1/building_blocks/weekly_winners_2026.json" }
-  }
-}
-```
-
-### Resolution algorithm (`dataJoin.js`)
-
-1. Get contest title from `_resolveContestTitle()` for the current draft.
-2. For each entry in `tournaments_index.tournaments`, check if any of its `underdog_contest_titles` matches (case-insensitive exact match; substring fallback for noisy titles like "Best Ball Mania VII — Week 1 Slate").
-3. On match: load the tournament's `building_blocks_url` from IDB cache (or fetch + cache if stale per `_meta.json`). Use its `marginal_contributions` + `leverage_scores` + `payout_curve` to compute live pick EV.
-4. On no match: log a warning via `console.warn`, fall back to "no tournament-specific EV — show projection-only ranking (VOR + position rank), no BRO score column."
+1. **Slate:** match the draft's slate UUID against `slates.<slate_id>.underdog_slate_id`
+   in `_meta.json` → that slate's `v2_path` (projections) and `v2_draws_*` (Artifact A).
+2. **Tournament:** the sim-side configs map every tournament's per-stage
+   `underdog_round_id` to its `tournament_id` (`resolve_round_to_tournament()`).
+   The published curves files carry `tournament_id`, and `_meta.json`'s
+   `slates.<slate_id>.tournaments` map is keyed by it. The extension ships (or
+   fetches) the small round-UUID → tournament_id mapping and then loads
+   `tournaments.<tournament_id>.curves_path`.
+3. **No match:** log a warning, fall back to projection-only ranking (VOR +
+   position rank) with no EV column.
 
 ### Adding new tournaments mid-season
 
-When Underdog launches a new format (or names a satellite contest oddly), the workflow is:
-
-1. R sim project generates new `v1/tournaments/{id}.json` + `v1/building_blocks/{id}.json`
-2. New entry in `tournaments_index.json` with the Underdog contest title alias(es)
-3. New entry in `_meta.json` under `tournaments`
-4. All three published to `bestball-bro-data`
-5. Extension picks up the new tournament on next `_meta.json` poll (within the hour for active users)
-
-No extension version bump required. New title aliases for existing tournaments are even cheaper — just `tournaments_index.json` edits.
+1. Sim repo: add the tournament's YAML config (`inst/data/tournaments/<id>.yaml`,
+   real fee/payouts/round UUIDs — see the Dachshund/Puppy 2 pattern).
+2. Re-run the EV publisher → new `v2/ev/<id>_curves.json` + `_meta.json` entry.
+3. Extension picks it up on the next `_meta.json` poll. No extension version bump.
 
 ---
 
@@ -353,14 +334,14 @@ The current feed `libertyvincent.github.io/bestball-bro-data` is the Mike Clay h
 
 ## Open decisions summary
 
-| # | Decision | My pick |
-|---|----------|---------|
-| 1 | Feed file structure | Multiple files |
-| 2 | Correlation representation | Sparse list per player |
-| 3 | Publish sim_draws | Yes, for advanced consumers |
-| 4 | Marginal contribution granularity | Every 3 picks + linear interpolation |
-| 5 | Extension update detection | Hybrid: _meta on each load, files on sha change |
-| 6 | Migration from current feed | Versioned URLs |
+| # | Decision | My pick | Outcome |
+|---|----------|---------|---------|
+| 1 | Feed file structure | Multiple files | Built that way (v2 projections + per-slate/per-tournament EV artifacts) |
+| 2 | Correlation representation | Sparse list per player | Superseded: correlation ships implicitly via Artifact A's shared path axis |
+| 3 | Publish sim_draws | Yes, for advanced consumers | Parquet draws are CI-artifacts only; the published correlated form is Artifact A |
+| 4 | Marginal contribution granularity | Every 3 picks + interpolation | Superseded with the building-blocks design (curves + live combine instead) |
+| 5 | Extension update detection | Hybrid: _meta on each load, files on sha change | Still the plan |
+| 6 | Migration from current feed | Versioned URLs | Built that way (`v2/` namespace, `_meta.json` at root) |
 
 ---
 
