@@ -67,6 +67,23 @@ jobs:
         run: |
           Rscript -e 'devtools::load_all(); publish_v2(out_dir = "build/deploy", n_sims = 10000L)'
 
+      - name: Build + publish EV-blocks artifacts (Artifact A + curves)
+        # Wires publish_ev_blocks() into the deploy. For each configured slate
+        # (ev_blocks_publish_config(): nfl_2026_season -> puppy2 + dachshund):
+        # reuses the Layer A draws the previous step wrote
+        #   build/deploy/v2/draws/<slate>.parquet
+        # to build Artifact A (int16 joint-draws tensor at N=500) + the
+        # per-tournament curves, then writes
+        #   build/deploy/v2/ev/<slate>_draws.{bin,json}
+        #   build/deploy/v2/ev/<id>_curves.json
+        # and MERGES the v2_draws_* / tournaments.<id>.curves_* keys into the
+        # existing _meta.json (the projection keys publish_v2 wrote are kept).
+        # MUST run before the parquet move (it reads v2/draws/*.parquet); the
+        # EV tensor lives in v2/ev/ and is NOT swept by that move, so it stays
+        # on gh-pages. Adding a slate/tournament = one line in the config.
+        run: |
+          Rscript -e 'devtools::load_all(); publish_ev_blocks_pipeline(out_dir = "build/deploy")'
+
       - name: Move parquet draws out of publish dir
         # Parquet draws are server-side artifacts for Layer B; they must
         # NOT land on gh-pages (Pages has a 1 GB site soft limit; four
