@@ -219,6 +219,32 @@ is the executable spec.
    field-mean EV); chalky rosters are priced to within pod noise. v1 ships with
    this caveat; uniqueness-conditioned curves are the v2 remedy.
 
+### Curve provenance: the field-targets digest
+
+The Artifact B curves are built from a synthetic field ([generate_field()]),
+whose shape depends on the scraped Underdog draft exports
+(`compute_field_targets()` → per-position mean counts + per-slot ADP sigma).
+Those exports are large, local-only, and gitignored, so they are **absent in
+CI**. To keep the curves CI publishes equal to the ones validated locally (the
+#30 fixture, the oracle re-gate — both built from the scraped field), the
+summary stats (means/rates/per-slot sigma, **never the raw drafts**) are
+committed as a **field-targets digest** at
+`inst/data/field_targets/<slate_id>.json`. The publisher resolves field
+targets **scraped drafts (local) → committed digest (CI) →
+`.default_field_targets()` (ADP-only, last resort)**; with the digest present,
+CI rebuilds the scraped field bit-for-bit (curves identical to within 0;
+verified by `inst/scripts/gate_curve_fidelity.R` and
+`tests/testthat/test-field-targets-digest.R`).
+
+The digest is a **snapshot** — regenerate it whenever drafts are re-scraped:
+
+```
+Rscript inst/scripts/refresh_field_targets_digest.R   # then commit inst/data/field_targets/*.json
+```
+
+(Longer term the extension/scraper-observes-drafts loop could publish the
+digest automatically.)
+
 ---
 
 ## Tournament configs (sim-side YAML, not published)

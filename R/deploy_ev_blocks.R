@@ -65,20 +65,31 @@ ev_blocks_publish_config <- function() {
     slot_adp_sd = stats::setNames(numeric(0), character(0)))     # -> global sigma 24
 }
 
-#' Resolve field targets: real scraped-draft targets when available,
-#' otherwise the ADP-only defaults (the CI path).
+#' Resolve field targets: scraped drafts (local) -> committed digest (CI)
+#' -> ADP-only defaults (true last resort).
+#'
+#' The digest [.load_field_targets_digest()] lets CI rebuild the *validated*
+#' scraped field (the #30 fixture / oracle re-gate field) without the
+#' gitignored raw drafts; [.default_field_targets()] only fires if even the
+#' digest is missing.
 #' @keywords internal
 .resolve_field_targets <- function(slate_id) {
-  tryCatch({
-    picks <- load_scraped_drafts()
-    tg <- compute_field_targets(picks, slate_id = slate_id)
+  tg <- tryCatch({
+    compute_field_targets(load_scraped_drafts(), slate_id = slate_id)
+  }, error = function(e) NULL)
+  if (!is.null(tg)) {
     cli::cli_alert_info("publish_ev_blocks [{slate_id}]: field targets from scraped drafts")
-    tg
-  }, error = function(e) {
-    cli::cli_alert_warning(
-      "publish_ev_blocks [{slate_id}]: scraped drafts unavailable -- ADP-default field targets")
-    .default_field_targets()
-  })
+    return(tg)
+  }
+  tg <- .load_field_targets_digest(slate_id)
+  if (!is.null(tg)) {
+    cli::cli_alert_info(
+      "publish_ev_blocks [{slate_id}]: field targets from committed digest (validated field)")
+    return(tg)
+  }
+  cli::cli_alert_warning(
+    "publish_ev_blocks [{slate_id}]: no scraped drafts or digest -- ADP-default field targets")
+  .default_field_targets()
 }
 
 #' Read the Layer A draws back, capped to `max_sims` simulations
