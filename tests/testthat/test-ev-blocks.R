@@ -420,6 +420,14 @@ test_that("publish_ev_blocks writes artifacts and registers them in _meta.json",
     expect_equal(treg$curves_sha256,
                  bestballBroSim:::.file_sha256(file.path(out_dir, treg$curves_path)))
   }
+  # The live-draft bridge: each tournament carries the draft `source_id` UUID
+  # + title, sourced from its config (underdog_tournament_id / display_name).
+  expect_equal(entry$tournaments$puppy2$underdog_tournament_id,
+               "e9f88543-f815-4db2-a076-1271fb35160c")
+  expect_equal(entry$tournaments$puppy2$title, "The Puppy 2")
+  expect_equal(entry$tournaments$dachshund$underdog_tournament_id,
+               "1f35c88b-e5c4-4b8c-b42a-db74f55d7a18")
+  expect_equal(entry$tournaments$dachshund$title, "The Dachshund")
 })
 
 # ---- real-set standing test (gated, expensive) ---------------------------------

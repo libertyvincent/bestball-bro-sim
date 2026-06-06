@@ -65,6 +65,16 @@ test_that("publish_ev_blocks_pipeline lands v2/ev/* and merges _meta without clo
   expect_equal(e$tournaments$dachshund$curves_path, "v2/ev/dachshund_curves.json")
   expect_true(nchar(e$tournaments$puppy2$curves_sha256) > 32L)
   expect_true(nchar(e$tournaments$dachshund$curves_sha256) > 32L)
+  # ---- the live-draft bridge: source_id UUID + title per tournament ----
+  # The extension maps a live draft's source_id -> tid -> curves via these.
+  # Values are the draft's tournament UUID (puppy2 from the Sprint-2 live
+  # capture; dachshund from the scraped draft exports) + the display title.
+  expect_equal(e$tournaments$puppy2$underdog_tournament_id,
+               "e9f88543-f815-4db2-a076-1271fb35160c")
+  expect_equal(e$tournaments$puppy2$title, "The Puppy 2")
+  expect_equal(e$tournaments$dachshund$underdog_tournament_id,
+               "1f35c88b-e5c4-4b8c-b42a-db74f55d7a18")
+  expect_equal(e$tournaments$dachshund$title, "The Dachshund")
 
   # ---- merge-without-clobber: the v2 projection keys survive ----
   expect_equal(e$v2_path, v2_path0)

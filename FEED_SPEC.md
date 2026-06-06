@@ -78,8 +78,10 @@ Compatibility:
       "v2_draws_sidecar_sha256": "...",
       "v2_draws_generated_at":   "2026-08-15T03:20:00Z",
       "tournaments": {
-        "puppy2":    { "curves_path": "v2/ev/puppy2_curves.json",    "curves_sha256": "..." },
-        "dachshund": { "curves_path": "v2/ev/dachshund_curves.json", "curves_sha256": "..." }
+        // underdog_tournament_id == the UUID a live draft exposes as `source_id`,
+        // so the extension maps source_id -> tid -> curves deterministically.
+        "puppy2":    { "underdog_tournament_id": "e9f88543-f815-4db2-a076-1271fb35160c", "title": "The Puppy 2",  "curves_path": "v2/ev/puppy2_curves.json",    "curves_sha256": "..." },
+        "dachshund": { "underdog_tournament_id": "1f35c88b-e5c4-4b8c-b42a-db74f55d7a18", "title": "The Dachshund", "curves_path": "v2/ev/dachshund_curves.json", "curves_sha256": "..." }
       }
     }
     // one entry per slate enabled in inst/data/slates/_manifest.yaml

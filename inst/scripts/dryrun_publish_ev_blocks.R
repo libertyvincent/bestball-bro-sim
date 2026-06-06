@@ -66,6 +66,13 @@ chk(!is.null(e$tournaments$puppy2$curves_path), "_meta tournaments.puppy2.curves
 chk(!is.null(e$tournaments$dachshund$curves_path), "_meta tournaments.dachshund.curves_path")
 chk(!is.null(e$tournaments$puppy2$curves_sha256) && !is.null(e$tournaments$dachshund$curves_sha256),
     "_meta tournaments curves sha256s")
+# live-draft bridge: source_id UUID + title per tournament
+chk(identical(e$tournaments$puppy2$underdog_tournament_id, "e9f88543-f815-4db2-a076-1271fb35160c") &&
+    identical(e$tournaments$puppy2$title, "The Puppy 2"),
+    "puppy2 underdog_tournament_id == live source_id + title 'The Puppy 2'")
+chk(identical(e$tournaments$dachshund$underdog_tournament_id, "1f35c88b-e5c4-4b8c-b42a-db74f55d7a18") &&
+    identical(e$tournaments$dachshund$title, "The Dachshund"),
+    "dachshund underdog_tournament_id (scraped) + title 'The Dachshund'")
 # merge-without-clobber
 chk(identical(e$v2_path, "v2/projections/nfl_2026_season.json"), "v2_path intact")
 chk(identical(e$sentinel_keep, "DO_NOT_CLOBBER"), "sentinel projection key NOT clobbered")

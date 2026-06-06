@@ -388,7 +388,8 @@ read_ev_draws <- function(out_dir, slate_id) {
 #' @param seed Optional seed for the pod-advancement simulation inside
 #'   [build_field_payouts()].
 #' @return A `bbbro_tournament_curves` object: `tournament_id`,
-#'   `slate_id`, `stage_weeks` (named list `r1`..`r4`), `structure`
+#'   `slate_id`, `underdog_tournament_id` (the draft's `source_id` UUID),
+#'   `title`, `stage_weeks` (named list `r1`..`r4`), `structure`
 #'   (pods/seats/advance), and `curves` (named list `g1`, `g2`, `g3`,
 #'   `payout_qf`, `payout_sf`, `h_final`, each `{x, y}`).
 #' @export
@@ -434,6 +435,12 @@ build_tournament_curves <- function(tournament_cfg, field_scores,
   structure(list(
     tournament_id = tournament_cfg$tournament_id,
     slate_id      = tournament_cfg$slate_id,
+    # The live-draft bridge: `underdog_tournament_id` is the UUID an Underdog
+    # draft exposes as `source_id`, so the extension can map
+    # source_id -> tid -> curves deterministically (no title-normalization).
+    # `title` is the human-readable name (config `display_name`).
+    underdog_tournament_id = tournament_cfg$underdog_tournament_id,
+    title                  = tournament_cfg$display_name,
     stage_weeks   = list(r1 = stage_weeks[["1"]], r2 = stage_weeks[["2"]],
                          r3 = stage_weeks[["3"]], r4 = stage_weeks[["4"]]),
     structure     = list(pod_sizes = st$pod, seats = st$seats,
@@ -598,9 +605,11 @@ rank_marginal_ev <- function(roster_ids, candidate_ids, ev_draws, curves,
 #' (curves JSON) for each tournament, then updates the feed root's
 #' `_meta.json`: the slate entry gains `v2_draws_path` /
 #' `v2_draws_sha256` / `v2_draws_sidecar_path` / `v2_draws_sidecar_sha256`,
-#' and a `tournaments` map keyed by tournament_id with `curves_path` /
-#' `curves_sha256`. Fetched slate/tournament-aware by the extension,
-#' sha-gated like the v2 feed.
+#' and a `tournaments` map keyed by tournament_id with `underdog_tournament_id`
+#' (the UUID an Underdog draft exposes as `source_id`) / `title` /
+#' `curves_path` / `curves_sha256`. The UUID is the live-draft bridge: the
+#' extension maps `source_id -> tid -> curves` deterministically. Fetched
+#' slate/tournament-aware by the extension, sha-gated like the v2 feed.
 #'
 #' @param out_dir Feed root directory.
 #' @param ev_draws A `bbbro_ev_draws` for the slate.
@@ -614,6 +623,7 @@ publish_ev_blocks <- function(out_dir, ev_draws, curves_list = list()) {
 
   draws_reg <- write_ev_draws(ev_draws, out_dir)
   curve_regs <- list()
+  curve_meta <- list()
   for (cv in curves_list) {
     stopifnot(inherits(cv, "bbbro_tournament_curves"))
     if (!identical(cv$slate_id, slate_id)) {
@@ -622,7 +632,12 @@ publish_ev_blocks <- function(out_dir, ev_draws, curves_list = list()) {
          not the draws' slate {.val {slate_id}}.",
         x = "Curves must come from the same sim run / slate as the draws."))
     }
-    curve_regs[[cv$tournament_id]] <- write_tournament_curves(cv, out_dir)
+    tid <- cv$tournament_id
+    curve_regs[[tid]] <- write_tournament_curves(cv, out_dir)
+    # The live-draft bridge: emit the draft `source_id` UUID + title so the
+    # extension maps source_id -> tid -> curves deterministically.
+    curve_meta[[tid]] <- list(underdog_tournament_id = cv$underdog_tournament_id,
+                              title                  = cv$title)
   }
 
   # Update _meta.json, preserving everything other publishers wrote.
@@ -641,8 +656,11 @@ publish_ev_blocks <- function(out_dir, ev_draws, curves_list = list()) {
   entry$v2_draws_generated_at   <- format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC")
   tn <- entry$tournaments %||% list()
   for (tid in names(curve_regs)) {
-    tn[[tid]] <- list(curves_path   = curve_regs[[tid]]$path,
-                      curves_sha256 = curve_regs[[tid]]$sha256)
+    tn[[tid]] <- list(
+      underdog_tournament_id = curve_meta[[tid]]$underdog_tournament_id,
+      title                  = curve_meta[[tid]]$title,
+      curves_path            = curve_regs[[tid]]$path,
+      curves_sha256          = curve_regs[[tid]]$sha256)
   }
   entry$tournaments <- tn
   manifest$slates[[slate_id]] <- entry
