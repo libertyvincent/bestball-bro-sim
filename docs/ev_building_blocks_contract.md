@@ -27,6 +27,8 @@ Per tournament, as functions of the relevant round score:
 - **Advancement:** `g₁(R1)`, `g₂(R2)`, `g₃(R3)` = P(advance that round | my round score), each vs the correct (survivor-selected) field for that round.
 - **Payout-by-exit-bucket:** `payout_QF(R2)`, `payout_SF(R3)`, `h_final(R4)` = expected $ given you exit (or finish) at that round with that score. These can be flat (Puppy 2: QF=$5, SF=$25) or rank-dependent (Dachshund SF: $100/$24 by Week-16 rank) — the sim emits whatever the ladder requires.
 
+- **Registration:** per-tournament `_meta.tournaments.<tid>` keys `curves_path` / `curves_sha256` (sha-gated like the draws) plus the **live-draft bridge** `underdog_tournament_id` (the UUID a live Underdog draft exposes as `draft.source_id`) and `title`. The extension maps `source_id → tid → curves` deterministically — no title-normalization. Sourced from each tournament config's `underdog_tournament_id` / `display_name` (`inst/data/tournaments/<tid>.yaml`).
+
 ## Extension eval loop
 Per available player X, over the shipped paths:
 1. **Assemble round-scores** (the roster-dependent step): for each path, take the roster's weekly best-ball lineup (top QB / 2 RB / 3 WR / TE / FLEX from the rostered players that week) for Weeks 1–14 → sum = R1; Weeks 15/16/17 = R2/R3/R4. Adding X only re-opens the weeks where X cracks the optimal lineup, so the marginal recompute is cheap.
