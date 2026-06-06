@@ -67,7 +67,7 @@ stamp(sprintf("building joint path pool (%d paths x %d players)", POOL_PATHS, TO
 if (is.null(ckpt$pool_draws)) {
   ckpt$pool_draws <- build_ev_draws(feed, layerA, slate_id = SLATE_ID,
                                     n_paths = POOL_PATHS, top_n = TOP_N_PLAYERS,
-                                    seed = SEED)
+                                    seed = SEED, lineup_spec = lineup_spec)
   save_ckpt()
 }
 pool_draws <- ckpt$pool_draws

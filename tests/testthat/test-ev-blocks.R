@@ -182,8 +182,14 @@ test_that("Artifact A: write -> read round-trip is the identity (serialization p
 
 test_that("Artifact A sidecar carries the documented contract fields", {
   fx <- .ev_fixture()
+  spec <- list(slate_id = "ev-test", slots = list(
+    list(pos = "QB", n = 1L, eligible = "QB"),
+    list(pos = "RB", n = 2L, eligible = "RB"),
+    list(pos = "WR", n = 3L, eligible = "WR"),
+    list(pos = "TE", n = 1L, eligible = "TE"),
+    list(pos = "FLEX", n = 1L, eligible = c("RB", "WR", "TE"))))
   ed <- build_ev_draws(fx$feed, fx$layerA, slate_id = "ev-test",
-                       n_paths = 50L, top_n = 12L, seed = 5L)
+                       n_paths = 50L, top_n = 12L, seed = 5L, lineup_spec = spec)
   out_dir <- file.path(tempdir(), "ev_blocks_sc")
   write_ev_draws(ed, out_dir)
   sc <- jsonlite::fromJSON(file.path(out_dir, "v2", "ev", "ev-test_draws.json"),
@@ -191,7 +197,7 @@ test_that("Artifact A sidecar carries the documented contract fields", {
   expect_setequal(
     c("slate_id", "dtype", "endianness", "axis_order", "n_paths", "n_players",
       "n_weeks", "weeks", "quant_scale", "player_index", "positions",
-      "generated_at"),
+      "lineup_spec", "generated_at"),
     names(sc))
   expect_equal(sc$dtype, "int16")
   expect_equal(sc$endianness, "little")
@@ -200,6 +206,24 @@ test_that("Artifact A sidecar carries the documented contract fields", {
   # player_index is 0-based and covers every player exactly once.
   idx <- unlist(sc$player_index)
   expect_setequal(idx, 0:(sc$n_players - 1L))
+  # lineup_spec serializes in the fixture shape: {slate_id, slots:[{pos,n,eligible}]},
+  # with single-position `eligible` a scalar and FLEX a string array.
+  expect_equal(sc$lineup_spec$slate_id, "ev-test")
+  expect_equal(sc$lineup_spec$slots$pos, c("QB", "RB", "WR", "TE", "FLEX"))
+  expect_equal(sc$lineup_spec$slots$n, c(1L, 2L, 3L, 1L, 1L))
+  expect_equal(sc$lineup_spec$slots$eligible[[1L]], "QB")
+  expect_equal(sc$lineup_spec$slots$eligible[[5L]], c("RB", "WR", "TE"))
+})
+
+test_that("write_ev_draws omits lineup_spec when the draws were built without one", {
+  fx <- .ev_fixture()
+  ed <- build_ev_draws(fx$feed, fx$layerA, slate_id = "ev-test",
+                       n_paths = 20L, top_n = 8L, seed = 5L)  # no lineup_spec
+  out_dir <- file.path(tempdir(), "ev_blocks_sc_nospec")
+  write_ev_draws(ed, out_dir)
+  sc <- jsonlite::fromJSON(file.path(out_dir, "v2", "ev", "ev-test_draws.json"),
+                           simplifyVector = TRUE)
+  expect_false("lineup_spec" %in% names(sc))
 })
 
 # ---- Artifact B: curves on real tournament configs ----------------------------

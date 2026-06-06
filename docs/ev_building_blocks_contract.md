@@ -16,7 +16,7 @@ The roster-dependent input. The sim already generates 10K correlated paths/slate
 - **Players:** the top ~300 realistically-draftable (not all ~457).
 - **Weeks:** all 17 (Weeks 1–14 individually — the qualifier score is a sum of *weekly* best-ball lineups, so per-week is required — plus 15/16/17).
 - **Paths (N):** set empirically by the **ranking-stability protocol** (below), not guessed. Expect 250–500. Payload at 300×17×N×2B ≈ 2.5 MB (N=250) / 5 MB (N=500), less gzipped.
-- **Sidecar (small JSON):** `{ appearance_id → player_index, weeks, n_paths, quant_scale, dtype, axis_order }`.
+- **Sidecar (small JSON):** `{ appearance_id → player_index, positions, weeks, n_paths, quant_scale, dtype, axis_order, lineup_spec }`. `lineup_spec` is the slate's starting lineup (`{ slate_id, slots:[{ pos, n, eligible }] }`, single-slot `eligible` a scalar / FLEX an array) — the round-score assembler needs it together with the curves file's `stage_weeks` to turn the tensor into per-round scores, so the feed is self-describing without the extension hard-coding the lineup.
 - **Registration:** per-slate `_meta` keys `v2_draws_path` / `v2_draws_sha256`. Fetched slate-aware; cached + sha-gated like the v2 feed (and `_meta` itself stays fetched-fresh per the freshness fix).
 - **HARD INVARIANT — path alignment.** Path *i* must be the *same simulated world* for every player; that shared path axis is the entire correlation mechanism. If draws are sampled/sorted per-player independently, stacking silently vanishes. First test of the artifact: a known stack (QB + his WR) shows the expected positive cross-path correlation, and a structural assert that no per-player reshuffle happened during serialization.
 

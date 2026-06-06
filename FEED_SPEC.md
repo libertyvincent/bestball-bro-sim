@@ -28,7 +28,7 @@ bestball-bro-data/  (gh-pages)
     │   └── nfl_2026_superflex.json
     └── ev/                                 # Layer B — EV building-block artifacts (per the frozen contract)
         ├── nfl_2026_season_draws.bin       #   Artifact A: path-aligned int16 joint-draws tensor (~5 MB at N=500)
-        ├── nfl_2026_season_draws.json      #   Artifact A sidecar (player index, axis metadata)
+        ├── nfl_2026_season_draws.json      #   Artifact A sidecar (player index, axis metadata, lineup_spec)
         ├── puppy2_curves.json              #   Artifact B: one curves file per tournament on the slate
         └── dachshund_curves.json
 ```
@@ -169,9 +169,25 @@ Consumers: Layer B offline (R) only. The extension does **not** fetch this file.
   "quant_scale": 10,
   "player_index": { "<underdog_id>": 0, ... },   // 0-based tensor row index
   "positions":    { "<underdog_id>": "RB", ... },
+  "lineup_spec": {                               // the slate's starting lineup
+    "slate_id": "nfl_2026_season",
+    "slots": [
+      { "pos": "QB", "n": 1, "eligible": "QB" },
+      { "pos": "RB", "n": 2, "eligible": "RB" },
+      { "pos": "WR", "n": 3, "eligible": "WR" },
+      { "pos": "TE", "n": 1, "eligible": "TE" },
+      { "pos": "FLEX", "n": 1, "eligible": ["RB", "WR", "TE"] }
+    ]
+  },
   "generated_at": "..."
 }
 ```
+
+The sidecar's `lineup_spec` (slate starting lineup) plus the curves file's
+`stage_weeks` are exactly what the extension's round-score assembler consumes to
+turn the tensor into per-round scores — the feed is self-describing. Single-slot
+`eligible` is a scalar, multi-position (FLEX) an array; the shape equals
+`load_slate_lineup_spec()` and the golden combine fixture's `inputs.lineup_spec`.
 
 **Hard invariant:** path *i* is the same simulated world for every player — the
 shared path axis is the correlation mechanism. The sim guarantees it at build

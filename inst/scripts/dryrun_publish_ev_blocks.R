@@ -80,6 +80,18 @@ expect_sz <- 500L * np * 17L * 2L
 chk(bin_sz == expect_sz, sprintf(".bin size = %d bytes (expect N*players*17*2 = %d; %.2f MB)",
                                  bin_sz, expect_sz, bin_sz/1e6))
 
+# self-describing feed: sidecar carries the Season lineup_spec (QB1/RB2/WR3/
+# TE1/FLEX1[RB,WR,TE]) in the #30 fixture shape, == load_slate_lineup_spec().
+ls_live <- sc$lineup_spec
+ls_ref  <- jsonlite::fromJSON(jsonlite::toJSON(load_slate_lineup_spec(SLATE),
+                              auto_unbox = TRUE), simplifyVector = TRUE)
+chk(!is.null(ls_live) && identical(ls_live$slate_id, SLATE), "sidecar carries lineup_spec.slate_id")
+chk(identical(ls_live$slots$pos, c("QB","RB","WR","TE","FLEX")) &&
+    identical(as.integer(ls_live$slots$n), c(1L,2L,3L,1L,1L)) &&
+    identical(ls_live$slots$eligible[[5L]], c("RB","WR","TE")),
+    "sidecar lineup_spec == Season lineup (QB1/RB2/WR3/TE1/FLEX1[RB,WR,TE])")
+chk(isTRUE(all.equal(ls_live, ls_ref)), "sidecar lineup_spec == load_slate_lineup_spec()")
+
 # shas in _meta match deployed files (the extension's freshness gate)
 sha_ok <- function(rel, sha) identical(bestballBroSim:::.file_sha256(file.path(DEPLOY, rel)), sha)
 chk(sha_ok(e$v2_draws_path, e$v2_draws_sha256), "draws .bin sha matches file")

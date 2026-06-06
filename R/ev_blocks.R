@@ -98,6 +98,12 @@ positions_from_feed <- function(feed) {
 #'   `v2/draws/<slate>.parquet` read back with [arrow::read_parquet()];
 #'   the draws are reused, never regenerated.
 #' @param slate_id Slate identifier carried into the sidecar.
+#' @param lineup_spec Optional slate lineup spec from
+#'   [load_slate_lineup_spec()] (`{slate_id, slots:[{pos, n, eligible}]}`).
+#'   When supplied it is carried on the object and serialized verbatim into
+#'   the draws sidecar, so the feed is self-describing: the extension's
+#'   round-score assembler needs it (together with `stage_weeks` from the
+#'   curves file) to turn the tensor into round scores. `NULL` omits it.
 #' @param n_paths Number of correlated paths to ship (set by the
 #'   ranking-stability protocol; see the contract doc).
 #' @param top_n Number of draftable players to include (default 300).
@@ -113,12 +119,23 @@ positions_from_feed <- function(feed) {
 #' @return A `bbbro_ev_draws` object: list with `tensor` (integer array,
 #'   dim `[n_weeks, n_players, n_paths]`, stored week-fastest so the raw
 #'   buffer is `[path][player][week]` C-order), `player_ids`, `positions`,
-#'   `weeks`, `n_paths`, `quant_scale`, `slate_id`.
+#'   `weeks`, `n_paths`, `quant_scale`, `slate_id`, and (when supplied)
+#'   `lineup_spec`.
 #' @export
 build_ev_draws <- function(feed, layerA_draws, slate_id,
                            n_paths = 500L, top_n = 300L,
                            corr_params = default_corr_params, seed = NULL,
-                           quant_scale = 10, weeks = 1:17) {
+                           quant_scale = 10, weeks = 1:17,
+                           lineup_spec = NULL) {
+  if (!is.null(lineup_spec)) {
+    .validate_lineup_spec(lineup_spec)
+    if (!is.null(lineup_spec$slate_id) &&
+        !identical(lineup_spec$slate_id, slate_id)) {
+      cli::cli_abort(c(
+        "`lineup_spec` is for slate {.val {lineup_spec$slate_id}}, \\
+         not the draws' slate {.val {slate_id}}."))
+    }
+  }
   positions <- positions_from_feed(feed)
   schedule  <- schedule_from_feed(feed)
 
@@ -178,7 +195,8 @@ build_ev_draws <- function(feed, layerA_draws, slate_id,
     weeks       = weeks,
     n_paths     = as.integer(n_paths),
     quant_scale = quant_scale,
-    slate_id    = slate_id
+    slate_id    = slate_id,
+    lineup_spec = lineup_spec
   ), class = "bbbro_ev_draws")
 }
 
@@ -223,6 +241,14 @@ write_ev_draws <- function(ev_draws, out_dir) {
       seq_along(ev_draws$player_ids) - 1L, ev_draws$player_ids)),
     positions    = as.list(ev_draws$positions),
     generated_at = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"))
+  # Self-describing feed: the round-score assembler needs the lineup_spec
+  # (same `{slate_id, slots:[{pos,n,eligible}]}` shape the #30 fixture
+  # embedded) alongside the tensor. Inserted before generated_at; omitted
+  # when the draws were built without a spec (e.g. synthetic-slate tests).
+  if (!is.null(ev_draws$lineup_spec)) {
+    sidecar <- append(sidecar, list(lineup_spec = ev_draws$lineup_spec),
+                      after = which(names(sidecar) == "positions"))
+  }
   jsonlite::write_json(sidecar, sidecar_abs, auto_unbox = TRUE, pretty = TRUE,
                        null = "null", na = "null")
 
