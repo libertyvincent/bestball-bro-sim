@@ -84,4 +84,18 @@ test_that("publish_ev_blocks_pipeline lands v2/ev/* and merges _meta without clo
   expect_true(np > 40L && np <= 80L)
   expect_equal(sc$n_weeks, 17L)
   expect_equal(file.size(file.path(td, e$v2_draws_path)), 64L * np * 17L * 2L)
+
+  # ---- the sidecar is self-describing: it carries the Season lineup_spec ----
+  # (QB1 / RB2 / WR3 / TE1 / FLEX1[RB,WR,TE]) in the #30 fixture shape, so the
+  # extension's round-score assembler has lineup_spec + stage_weeks from live
+  # data. Equals load_slate_lineup_spec() and the fixture's inputs.lineup_spec.
+  expect_equal(sc$lineup_spec$slate_id, "nfl_2026_season")
+  expect_equal(sc$lineup_spec$slots$pos, c("QB", "RB", "WR", "TE", "FLEX"))
+  expect_equal(sc$lineup_spec$slots$n, c(1L, 2L, 3L, 1L, 1L))
+  expect_equal(sc$lineup_spec$slots$eligible[[1L]], "QB")     # single -> scalar
+  expect_equal(sc$lineup_spec$slots$eligible[[5L]], c("RB", "WR", "TE"))  # FLEX -> array
+  fix <- jsonlite::fromJSON(
+    testthat::test_path("..", "..", "inst", "fixtures",
+                        "ev_combine_fixture_puppy2.json"), simplifyVector = TRUE)
+  expect_equal(sc$lineup_spec, fix$inputs$lineup_spec)
 })

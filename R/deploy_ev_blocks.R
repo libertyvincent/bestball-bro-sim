@@ -160,7 +160,8 @@ publish_ev_blocks_pipeline <- function(
     cli::cli_alert_info(
       "publish_ev_blocks [{sid}]: building Artifact A (N={cfg$n_paths} paths, top {cfg$top_n})")
     ev_draws <- build_ev_draws(feed, layerA, slate_id = sid,
-                               n_paths = cfg$n_paths, top_n = cfg$top_n, seed = seed)
+                               n_paths = cfg$n_paths, top_n = cfg$top_n, seed = seed,
+                               lineup_spec = lineup_spec)
 
     # ---- Artifact B: synthetic field scored once -> per-tournament curves ----
     # Field targets: real scraped-draft targets when present (local/dev),
