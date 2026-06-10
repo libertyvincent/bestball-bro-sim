@@ -1,0 +1,32 @@
+# Position-level availability prior
+# ---------------------------------------------------------------------------
+# Expected games played for STARTER-CALIBER players at each position (the
+# tier that actually gets drafted), over a 17-game regular season. Used to
+# discount Clay's projections BEFORE rank calibration, so the whole blended
+# consensus (Clay direct + ETR/LegUp via the Clay-fit curve) inherits a
+# realistic availability level instead of Clay's flat ~17-game assumption.
+#
+# WHY: Clay projects essentially every drafted player at 17 games (zero
+# in-season attrition). The market (Underdog) prices injury attrition, which
+# is by far steepest at RB -- the diagnosed source of RB season means running
+# ~+14% hot vs market while QB/WR/TE sit at/below it. See
+# inst/scripts/diag_rb_market_gap.R and R/availability.R.
+#
+# Applied per player as  factor = min(1, expected_games[pos] / clay_games),
+# i.e. RELATIVE to Clay's own per-player games projection: a player Clay
+# already projects below the positional prior (returning-from-injury, buried
+# handcuff) is NOT discounted again (factor clamps to 1). No double-counting.
+#
+# BASIS: starter-caliber players are more durable than position-wide averages
+# (which are dragged down by injury-prone fringe players). RB carries the
+# steepest in-season attrition; QB/WR/TE are mild. These are a configurable
+# starting calibration -- we correct OUR 17-game assumption, we do NOT copy
+# Underdog's number (no market anchoring). Tune here as data warrants.
+
+enabled: true
+
+expected_games:
+  QB: 16.8   # ~0.2 games lost -- durable established starters
+  RB: 15.2   # ~1.8 games lost -- steepest attrition (the artifact this fixes)
+  WR: 16.5   # ~0.5 games lost
+  TE: 16.6   # ~0.4 games lost

@@ -49,6 +49,20 @@ blend_slate <- function(slate_id,
   etr_rows            <- .fetch_etr_for_slate(sources,  base_url, slate_id, cache_dir)
   legup_rows          <- .fetch_legup_for_slate(sources, base_url, slate_id, cache_dir)
 
+  # --- Position-level availability adjustment (UPSTREAM of calibration) ----
+  # Clay projects starter-caliber players at ~17 games regardless of
+  # position; the market prices injury attrition (steepest at RB). Scale
+  # Clay's points by min(1, expected_games[pos] / clay_games) BEFORE the
+  # calibration curve is built and before Clay enters the blend, so all
+  # three sources -- Clay direct and ETR/LegUp via the Clay-fit rank curve
+  # -- inherit the corrected level. See R/availability.R.
+  avail_prior <- .load_availability_prior()
+  avail_app   <- .apply_availability_to_clay(clay_offense, avail_prior)
+  clay_offense <- avail_app$clay_offense
+  if (!is.null(avail_app$summary)) {
+    cli::cli_alert("Availability adjustment applied (RB factor ~{avail_app$summary$per_position$RB$mean_factor})")
+  }
+
   # --- Build Clay's calibration curve -------------------------------------
   cli::cli_alert("Building Clay calibration curves")
   curves <- build_calibration_curves(clay_offense$players)
@@ -92,13 +106,21 @@ blend_slate <- function(slate_id,
     replacement_ranks = .replacement_ranks_from_lineup(lineup_spec)
   )
 
+  # --- Brooks-class review list (no auto-correction) ----------------------
+  # Extreme per-player overshoots the position factor intentionally does NOT
+  # fix (torn ACLs, buried handcuffs): surfaced for manual `adjustments:`.
+  review <- .write_availability_review(slate_id, players_out)
+  cli::cli_alert(
+    "Availability review: {review$count} Brooks-class outlier(s) -> {.path {review$path}}")
+
   # --- Write JSON ----------------------------------------------------------
   feed <- .build_feed(
     slate_id       = slate_id,
     sources_used   = names(per_source_weights),
     source_weights = per_source_weights,
     aleatoric_cv   = sources$aleatoric_cv,
-    players        = players_out
+    players        = players_out,
+    availability   = avail_app$summary
   )
 
   if (isTRUE(write_json)) {
@@ -767,21 +789,23 @@ blend_slate <- function(slate_id,
 
 #' @keywords internal
 .build_feed <- function(slate_id, sources_used, source_weights,
-                        aleatoric_cv, players) {
+                        aleatoric_cv, players, availability = NULL) {
   by_id <- list()
   for (p in players) by_id[[p$underdog_id]] <- p
 
-  list(
-    `_meta` = list(
-      slate_id      = slate_id,
-      version       = format(Sys.Date(), "%Y-%m-%d"),
-      generated_at  = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
-      methodology   = "blended_consensus_v2",
-      sources_used  = sources_used,
-      source_weights = source_weights,
-      aleatoric_cv  = aleatoric_cv,
-      player_count  = length(by_id)
-    ),
-    players = by_id
+  meta <- list(
+    slate_id      = slate_id,
+    version       = format(Sys.Date(), "%Y-%m-%d"),
+    generated_at  = format(Sys.time(), "%Y-%m-%dT%H:%M:%SZ", tz = "UTC"),
+    methodology   = "blended_consensus_v2",
+    sources_used  = sources_used,
+    source_weights = source_weights,
+    aleatoric_cv  = aleatoric_cv,
+    player_count  = length(by_id)
   )
+  # Transparency: log the availability adjustment (mechanism + per-position
+  # factors) the same way manual entries log to user_adjustments_applied.
+  if (!is.null(availability)) meta$availability_adjustment <- availability
+
+  list(`_meta` = meta, players = by_id)
 }
