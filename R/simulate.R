@@ -21,17 +21,26 @@
 #' sources agree exactly), the outer draw degenerates to a constant
 #' (`scale_i == 1`) and the model reduces to pure aleatoric.
 #'
+#' Draw-level availability: for each sim, an independent missed-week mask
+#' (iid Bernoulli over active weeks, kept w.p. `q = 1 - availability_p_miss`)
+#' zeroes weeks the player misses. Shipped `season_mean`/`season_std`/
+#' percentiles, per-week `mean`/`std`/percentiles, and VOR/tier/position_rank
+#' are all recomputed from the MASKED draws. The returned `draws` (parquet)
+#' stay CONDITIONAL-on-playing -- the mask is re-realized independently in the
+#' tensor build so it does not entangle with the copula inverse-CDF. See
+#' DRAW_ZEROING_DESIGN.md.
+#'
 #' @param feed The full feed list from `blend_slate()` (with `_meta`
-#'   and `players`). The simulator overwrites `season_percentiles` and
-#'   each `weekly[[w]]$percentiles` block in-place with empirical values.
+#'   and `players`). The simulator overwrites the season + weekly stats
+#'   in-place with masked empirical values and recomputes position metrics.
 #' @param n_sims Number of season simulations per player (default 10000).
 #' @param seed Optional RNG seed for reproducibility. `NULL` = no seed.
 #' @return A list with:
-#'   - `enriched_feed`: same shape as `feed`, with empirical percentiles
-#'     replacing analytical ones.
+#'   - `enriched_feed`: same shape as `feed`, with masked empirical stats
+#'     replacing the analytical ones and post-sim VOR/tiers.
 #'   - `draws`: long-format data.frame with columns
-#'     `underdog_id, sim_idx, week, draw_value` -- only players with a
-#'     usable projection contribute rows.
+#'     `underdog_id, sim_idx, week, draw_value` -- conditional-on-playing
+#'     (0 only on byes); only players with a usable projection contribute rows.
 #' @export
 simulate_slate <- function(feed, n_sims = 10000L, seed = NULL) {
   if (!is.null(seed)) set.seed(seed)
@@ -44,16 +53,29 @@ simulate_slate <- function(feed, n_sims = 10000L, seed = NULL) {
   chunks  <- vector("list", length(players))
 
   for (i in seq_along(players)) {
-    p   <- players[[i]]
-    sim <- .simulate_player(p, n_sims)
-    if (!is.null(sim)) {
-      players[[i]] <- .apply_empirical_percentiles(p, sim)
-      chunks[[i]]  <- .draws_long_chunk(p$underdog_id, sim)
+    p        <- players[[i]]
+    sim_cond <- .simulate_player(p, n_sims)   # conditional-on-playing draws
+    if (!is.null(sim_cond)) {
+      # Draw-level availability mask (per-player q from the blender's rate),
+      # applied to the season-stat recompute. Independent of the value draws.
+      q      <- 1 - (p$availability_p_miss %||% 0)
+      mask   <- .sample_missed_week_mask(p, n_sims, q)
+      masked <- sim_cond * mask
+      players[[i]] <- .apply_masked_stats(p, masked)
+      # Parquet draws stay CONDITIONAL-on-playing (0 only on byes): the mask is
+      # re-realized independently in the tensor build (R/ev_blocks.R). Writing
+      # the mask here would entangle it with the copula's inverse-CDF.
+      chunks[[i]]  <- .draws_long_chunk(p$underdog_id, sim_cond)
     } else {
       players[[i]] <- p
     }
   }
   feed$players <- players
+
+  # VOR / tier / position_rank are post-sim now: recompute from the MASKED
+  # season_mean (RB tiers shift when means drop ~11%). Uses the slate's lineup
+  # spec for replacement ranks, mirroring blend_slate's provisional pass.
+  feed <- .recompute_position_metrics_post_sim(feed)
 
   chunks <- Filter(Negate(is.null), chunks)
   draws  <- if (length(chunks) == 0L) {
@@ -120,11 +142,47 @@ simulate_slate <- function(feed, n_sims = 10000L, seed = NULL) {
   draws
 }
 
-#' Overwrite analytical percentiles on a player record with empirical
-#' values computed from a draws matrix.
+#' Sample a per-(sim, week) missed-week mask for one player
+#'
+#' iid Bernoulli over the player's ACTIVE (non-bye) weeks: each active week is
+#' kept with probability `q = 1 - availability_p_miss`. Bye weeks keep mask 1
+#' (their draw is already 0, so masking is moot) and are never candidates for
+#' missing -- a bye is not a missed game. `q >= 1` (no attrition) short-circuits
+#' to an all-ones mask. Independent of the value draws.
+#'
+#' @param player A single player record (needs `weekly`).
+#' @param n_sims Integer.
+#' @param q Kept probability in (0, 1].
+#' @return An `n_sims x n_weeks` 0/1 numeric matrix.
 #' @keywords internal
-.apply_empirical_percentiles <- function(player, draws_matrix) {
-  season_sums <- rowSums(draws_matrix)
+.sample_missed_week_mask <- function(player, n_sims, q) {
+  weekly  <- player$weekly
+  n_weeks <- length(weekly)
+  mask    <- matrix(1, nrow = n_sims, ncol = n_weeks)
+  if (is.null(q) || is.na(q) || q >= 1) return(mask)
+  for (w in seq_len(n_weeks)) {
+    if (isTRUE(weekly[[w]]$is_bye)) next
+    mask[, w] <- stats::rbinom(n_sims, 1L, q)
+  }
+  mask
+}
+
+#' Recompute a player's shipped stats from MASKED draws
+#'
+#' Replaces the pre-sim analytical stats with empirical values from the masked
+#' draws matrix. Sets `season_mean`/`season_std` (now post-mask, so the old
+#' `season_std^2 = disagreement^2 + aleatoric^2` invariant is RETIRED;
+#' `disagreement_std`/`aleatoric_std` are left as the pre-mask conditional
+#' components), `season_percentiles`, and per-week `mean`/`std`/`percentiles`.
+#' Weekly `mean`/`std` are **unconditional** (include the miss chance), so
+#' `Sum_active weekly.mean ~= season_mean` is preserved. For attrition-heavy
+#' positions a weekly `p10` may legitimately be 0 (e.g. RB, `p_miss > 0.10`).
+#' Bye weeks stay 0.
+#' @keywords internal
+.apply_masked_stats <- function(player, masked) {
+  season_sums <- rowSums(masked)
+  player$season_mean <- round(mean(season_sums), 1)
+  player$season_std  <- round(stats::sd(season_sums), 1)
   qs <- stats::quantile(season_sums, c(0.10, 0.25, 0.50, 0.75, 0.90),
                         names = FALSE, type = 7)
   player$season_percentiles <- list(
@@ -136,16 +194,37 @@ simulate_slate <- function(feed, n_sims = 10000L, seed = NULL) {
   for (w in seq_along(weekly)) {
     if (isTRUE(weekly[[w]]$is_bye)) {
       weekly[[w]]$percentiles <- list(p10 = 0, p50 = 0, p90 = 0)
-    } else {
-      wq <- stats::quantile(draws_matrix[, w], c(0.10, 0.50, 0.90),
-                            names = FALSE, type = 7)
-      weekly[[w]]$percentiles <- list(
-        p10 = round(wq[1], 2), p50 = round(wq[2], 2), p90 = round(wq[3], 2)
-      )
+      next
     }
+    col <- masked[, w]
+    weekly[[w]]$mean <- round(mean(col), 2)
+    weekly[[w]]$std  <- round(stats::sd(col), 2)
+    wq <- stats::quantile(col, c(0.10, 0.50, 0.90), names = FALSE, type = 7)
+    weekly[[w]]$percentiles <- list(
+      p10 = round(wq[1], 2), p50 = round(wq[2], 2), p90 = round(wq[3], 2)
+    )
   }
   player$weekly <- weekly
   player
+}
+
+#' Recompute position_rank / VOR / tier from the post-sim (masked) season_mean
+#'
+#' Mirrors blend_slate's provisional pass, but on the masked means so VOR and
+#' tiers reflect attrition. No-op when the feed carries no `slate_id` or its
+#' lineup spec can't be loaded (the provisional blend-time metrics then stand).
+#' @keywords internal
+.recompute_position_metrics_post_sim <- function(feed) {
+  slate_id <- feed[["_meta"]]$slate_id
+  if (is.null(slate_id)) return(feed)
+  lineup_spec <- tryCatch(load_slate_lineup_spec(slate_id),
+                          error = function(e) NULL)
+  if (is.null(lineup_spec)) return(feed)
+  feed$players <- .add_position_metrics(
+    feed$players,
+    replacement_ranks = .replacement_ranks_from_lineup(lineup_spec)
+  )
+  feed
 }
 
 #' Long-format chunk for one player's draws matrix.

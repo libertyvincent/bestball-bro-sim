@@ -49,21 +49,17 @@ blend_slate <- function(slate_id,
   etr_rows            <- .fetch_etr_for_slate(sources,  base_url, slate_id, cache_dir)
   legup_rows          <- .fetch_legup_for_slate(sources, base_url, slate_id, cache_dir)
 
-  # --- Position-level availability adjustment (UPSTREAM of calibration) ----
-  # Clay projects starter-caliber players at ~17 games regardless of
-  # position; the market prices injury attrition (steepest at RB). Scale
-  # Clay's points by min(1, expected_games[pos] / clay_games) BEFORE the
-  # calibration curve is built and before Clay enters the blend, so all
-  # three sources -- Clay direct and ETR/LegUp via the Clay-fit rank curve
-  # -- inherit the corrected level. See R/availability.R.
+  # --- Position-level availability (draw-level game-zeroing) ---------------
+  # Availability is NOT scaled into the points here (PR #34's mean-level
+  # mechanism is retired). Clay's points -- and therefore the calibration
+  # curve and the ETR/LegUp calibrated values -- stay UNSCALED (conditional-
+  # on-playing). The prior only sets a per-player miss rate, stamped onto each
+  # feed record as `availability_p_miss`, that the Layer A stat recompute
+  # (R/simulate.R) and the tensor build (R/ev_blocks.R) apply as a draw-level
+  # mask. See DRAW_ZEROING_DESIGN.md and R/availability.R.
   avail_prior <- .load_availability_prior()
-  avail_app   <- .apply_availability_to_clay(clay_offense, avail_prior)
-  clay_offense <- avail_app$clay_offense
-  if (!is.null(avail_app$summary)) {
-    cli::cli_alert("Availability adjustment applied (RB factor ~{avail_app$summary$per_position$RB$mean_factor})")
-  }
 
-  # --- Build Clay's calibration curve -------------------------------------
+  # --- Build Clay's calibration curve (on UNSCALED points) -----------------
   cli::cli_alert("Building Clay calibration curves")
   curves <- build_calibration_curves(clay_offense$players)
 
@@ -93,7 +89,8 @@ blend_slate <- function(slate_id,
     curves        = curves,
     weights       = per_source_weights,
     aleatoric_cv  = sources$aleatoric_cv,
-    weekly_team   = clay_weekly_team
+    weekly_team   = clay_weekly_team,
+    avail_prior   = avail_prior
   )
 
   # --- Within-slate position_rank, VOR, tier ------------------------------
@@ -120,7 +117,7 @@ blend_slate <- function(slate_id,
     source_weights = per_source_weights,
     aleatoric_cv   = sources$aleatoric_cv,
     players        = players_out,
-    availability   = avail_app$summary
+    availability   = .availability_mechanism_marker(avail_prior)
   )
 
   if (isTRUE(write_json)) {
@@ -345,6 +342,7 @@ blend_slate <- function(slate_id,
     pos_rank     = vapply(rows, function(r) as.integer(r$rank_position %||% NA), integer(1)),
     points       = vapply(rows, function(r) as.numeric(r$projected_points_half_ppr %||% NA),
                           numeric(1)),
+    games        = vapply(rows, function(r) as.numeric(r$games %||% NA), numeric(1)),
     stringsAsFactors = FALSE
   )
 
@@ -363,6 +361,7 @@ blend_slate <- function(slate_id,
     overall_rank = clay_df$overall_rank[m[matched]],
     pos_rank     = clay_df$pos_rank[m[matched]],
     points       = clay_df$points[m[matched]],
+    games        = clay_df$games[m[matched]],
     stringsAsFactors = FALSE
   )
 }
@@ -406,7 +405,9 @@ blend_slate <- function(slate_id,
 
 #' @keywords internal
 .blend_each_player <- function(slate, clay, etr, legup,
-                                curves, weights, aleatoric_cv, weekly_team) {
+                                curves, weights, aleatoric_cv, weekly_team,
+                                avail_prior = list(enabled = FALSE,
+                                                   expected_games = list())) {
   skill <- c("QB", "RB", "WR", "TE")
   # Slate restricted to skill positions with a usable underdog_id
   s <- slate[slate$position %in% skill & !is.na(slate$underdog_id), ,
@@ -431,6 +432,7 @@ blend_slate <- function(slate_id,
 
     # --- Clay ----
     ci <- clay_match[i]
+    clay_games_i <- if (!is.na(ci)) clay$games[ci] else NA_real_
     if (!is.na(ci)) {
       pts <- clay$points[ci]
       if (!is.na(pts) && !is.null(weights$clay)) {
@@ -504,11 +506,18 @@ blend_slate <- function(slate_id,
       weekly           <- wk$records
     }
 
+    # Per-player draw-zeroing miss rate (carries PR #34's clamp). Missing
+    # clay_games defaults to a full 17-game season -> canonical 1 - prior/17.
+    p_miss <- .availability_p_miss(clay_games_i,
+                                   avail_prior$expected_games[[pos]],
+                                   avail_prior$enabled)
+
     out[[i]] <- list(
       underdog_id                = ud,
       name                       = p$full_name,
       team                       = team,
       position                   = pos,
+      availability_p_miss        = round(p_miss, 4),
       underdog_projected_points  = if (is.na(p$projected_points)) NULL
                                    else round(p$projected_points, 1),
       season_mean                = if (is.na(season_mean)) NULL
@@ -803,9 +812,10 @@ blend_slate <- function(slate_id,
     aleatoric_cv  = aleatoric_cv,
     player_count  = length(by_id)
   )
-  # Transparency: log the availability adjustment (mechanism + per-position
-  # factors) the same way manual entries log to user_adjustments_applied.
-  if (!is.null(availability)) meta$availability_adjustment <- availability
+  # Transparency: log the availability MECHANISM marker (draw-zeroing type,
+  # priors, canonical per-position miss rates). Replaces PR #34's
+  # availability_adjustment scaling summary.
+  if (!is.null(availability)) meta$availability_mechanism <- availability
 
   list(`_meta` = meta, players = by_id)
 }
