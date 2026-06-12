@@ -223,30 +223,14 @@ build_ev_draws <- function(feed, layerA_draws, slate_id,
   q
 }
 
-#' Apply the draw-level availability mask to correlated weekly draws
+#' Apply the draw-level availability mask to a feed's correlated draws
 #'
-#' Multiplies each player's week-w draws by an independent `Bernoulli(q_i)`
-#' mask. Bye-week draws are already 0 (masking is moot). Reseeded off `seed`
-#' with a fixed offset so the mask is reproducible for gate runs yet
-#' independent of the copula draws (which consumed `seed`). A no-op when every
-#' `q_i >= 1` (no availability prior / synthetic fixtures).
+#' Thin wrapper: derives per-player `q` from the feed's `availability_p_miss`
+#' and delegates to [.mask_matrix_list()] (shared with [predict_pod_xadv()] so
+#' the tensor and validator scoring paths price availability identically).
 #' @keywords internal
 .apply_availability_mask <- function(ml, feed, player_ids, seed = NULL) {
-  q <- .availability_q_from_feed(feed, player_ids)
-  if (all(q >= 1)) return(ml)
-  if (!is.null(seed)) set.seed(as.integer(seed) + 7919L)
-  for (w in names(ml)) {
-    M   <- ml[[w]]
-    ids <- rownames(M)
-    for (j in seq_along(ids)) {
-      qi <- q[[ids[j]]]
-      if (!is.null(qi) && !is.na(qi) && qi < 1) {
-        M[j, ] <- M[j, ] * stats::rbinom(ncol(M), 1L, qi)
-      }
-    }
-    ml[[w]] <- M
-  }
-  ml
+  .mask_matrix_list(ml, .availability_q_from_feed(feed, player_ids), seed)
 }
 
 #' Write Artifact A to disk (raw int16 tensor + JSON sidecar)

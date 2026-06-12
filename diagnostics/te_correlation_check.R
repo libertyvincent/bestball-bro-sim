@@ -54,7 +54,7 @@ BUILD <- list(
   bin_sha256         = digest(file = bin_f,  algo = "sha256"),
   sidecar_sha256     = digest(file = side_f, algo = "sha256"),
   proj_generated_at  = proj[["_meta"]]$generated_at,
-  availability_on    = !is.null(proj[["_meta"]]$availability_adjustment))
+  availability_on    = !is.null(proj[["_meta"]]$availability_mechanism))
 cat("=== BUILD PINNED AT RUNTIME ===\n")
 for (k in names(BUILD)) cat(sprintf("  %-20s %s\n", k, BUILD[[k]]))
 

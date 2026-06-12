@@ -236,6 +236,44 @@ sample_correlated_draws <- function(player_ids,
 
 # ---- helpers ---------------------------------------------------------------
 
+#' Apply a draw-level availability mask to a matrix-list of correlated draws
+#'
+#' Multiplies each player's week-w draws by an independent `Bernoulli(q_i)`
+#' mask (`q_i = 1 - availability_p_miss`), applied **after** the copula
+#' inverse-CDF so missingness stays independent of the latent. Bye-week draws
+#' are already 0 (masking is moot). Reseeded off `seed` with a fixed offset so
+#' the mask is reproducible yet independent of the copula draws (which consumed
+#' `seed`). A no-op when every `q_i >= 1`. Shared by [build_ev_draws()] (tensor)
+#' and [predict_pod_xadv()] (validator) so both scoring paths price availability
+#' identically. See DRAW_ZEROING_DESIGN.md.
+#'
+#' @param ml Named (by week) list of `[n_players x n_sims]` matrices with
+#'   `rownames = underdog_id`.
+#' @param q_by_player Named numeric vector `underdog_id -> kept probability`.
+#'   Players missing from it default to `q = 1` (no mask).
+#' @param seed Optional integer; the copula seed. The mask uses `seed + offset`.
+#' @param seed_offset Integer offset (default 7919L).
+#' @keywords internal
+.mask_matrix_list <- function(ml, q_by_player, seed = NULL,
+                              seed_offset = 7919L) {
+  if (length(q_by_player) == 0L || all(q_by_player >= 1, na.rm = TRUE)) {
+    return(ml)
+  }
+  if (!is.null(seed)) set.seed(as.integer(seed) + seed_offset)
+  for (w in names(ml)) {
+    M   <- ml[[w]]
+    ids <- rownames(M)
+    for (j in seq_along(ids)) {
+      qi <- q_by_player[[ids[j]]]
+      if (!is.null(qi) && !is.na(qi) && qi < 1) {
+        M[j, ] <- M[j, ] * stats::rbinom(ncol(M), 1L, qi)
+      }
+    }
+    ml[[w]] <- M
+  }
+  ml
+}
+
 #' Validate the correlation-parameter list. Errors on missing names,
 #' out-of-range values, or nesting violations.
 #' @keywords internal
