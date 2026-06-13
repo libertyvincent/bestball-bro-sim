@@ -115,6 +115,11 @@ resolve_tournament_field_size <- function(tournament_cfg, n_field, snap = TRUE) 
 #' @param contrib_entry_id Optional entry_id; when set, per-player optimal-
 #'   lineup contributions for that team are computed from the same joint
 #'   draw and returned in `contrib` (head-5 attribution).
+#' @param availability_p_miss Optional named numeric vector
+#'   (`underdog_id -> p_miss`). When supplied, the draw-level availability mask
+#'   (`q = 1 - p_miss`) is applied post-inverse-CDF via [.mask_matrix_list()] --
+#'   the same zeroing the tensor build applies -- so curves are calibrated
+#'   against an attrition-priced field. `NULL` (default) = no mask.
 #' @return Named list with:
 #'   \itemize{
 #'     \item `stage_scores` -- named list (`"1"`..`"N"`) of
@@ -136,7 +141,8 @@ simulate_per_stage_scores <- function(rosters,
                                       n_sims = 10000L,
                                       seed = NULL,
                                       precomputed_marginals = NULL,
-                                      contrib_entry_id = NULL) {
+                                      contrib_entry_id = NULL,
+                                      availability_p_miss = NULL) {
   if (!is.list(rosters) || length(rosters) == 0L) {
     cli::cli_abort("`rosters` must be a non-empty list of entry_id -> roster.")
   }
@@ -154,6 +160,19 @@ simulate_per_stage_scores <- function(rosters,
     output_format         = "matrix_list",
     precomputed_marginals = precomputed_marginals
   )
+
+  # Draw-level availability: mask the field/pod's conditional draws so the
+  # tournament curves are calibrated against an attrition-priced field -- the
+  # SAME mask the tensor build applies (else the field scores ~1/q hot and the
+  # advancement/payout curves under-price the user's masked roster). Default
+  # NULL -> no mask (mechanics tests / fixtures unaffected). See
+  # DRAW_ZEROING_DESIGN.md and [.mask_matrix_list()].
+  if (!is.null(availability_p_miss)) {
+    q <- 1 - availability_p_miss[union_ids]
+    q[is.na(q)] <- 1
+    names(q) <- union_ids
+    ml <- .mask_matrix_list(ml, q, seed)
+  }
 
   n_teams <- length(rosters)
   stage_scores <- lapply(seq_len(n_stage), function(.) {
@@ -448,14 +467,16 @@ build_field_payouts <- function(scores, tournament_cfg, seed = NULL) {
 #' @param positions,layerA_draws,schedule,lineup_spec See
 #'   [simulate_per_stage_scores()].
 #' @param field_cache Output of [build_field_payouts()].
-#' @param corr_params,n_sims,seed See [simulate_per_stage_scores()].
+#' @param corr_params,n_sims,seed,availability_p_miss See
+#'   [simulate_per_stage_scores()].
 #' @return List with `team_ev`, `per_player_ev`, `advance_probs`, `per_sim`.
 #' @export
 compute_team_ev <- function(pod_rosters, team_entry_id, positions,
                             layerA_draws, schedule, lineup_spec,
                             tournament_cfg, field_cache,
                             corr_params = default_corr_params,
-                            n_sims = 10000L, seed = NULL) {
+                            n_sims = 10000L, seed = NULL,
+                            availability_p_miss = NULL) {
   if (!(team_entry_id %in% names(pod_rosters))) {
     cli::cli_abort("`team_entry_id` {.val {team_entry_id}} not found in `pod_rosters`.")
   }
@@ -466,7 +487,7 @@ compute_team_ev <- function(pod_rosters, team_entry_id, positions,
     rosters = pod_rosters, positions = positions, layerA_draws = layerA_draws,
     schedule = schedule, lineup_spec = lineup_spec, tournament_cfg = tournament_cfg,
     corr_params = corr_params, n_sims = n_sims, seed = seed,
-    contrib_entry_id = team_entry_id)
+    contrib_entry_id = team_entry_id, availability_p_miss = availability_p_miss)
   M <- lapply(pod_scores$stage_scores, function(mm) mm[team_entry_id, ])
 
   # ---- qualifier-round payout via field-rank percentile ----
