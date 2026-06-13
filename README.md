@@ -225,15 +225,15 @@ Layer B foundation. Reads scraped Underdog drafts (captured by the bbbrotk Chrom
 
 ### Inputs
 
-The Chrome-extension scraper writes a single JSON export to:
+`load_scraped_drafts()` reads the **privacy-stripped field corpus** committed in the `bestball-bro-data` repo:
 
 ```
-inst/data/scraped_drafts/udbb-scraper-latest.json
+bestball-bro-data/sources/field/boards_<date>.json
 ```
 
-Exports are 5–10 MB each and are git-ignored (`inst/data/scraped_drafts/*.json`). Re-publish empirics whenever a fresh export is dropped in. The current sample is ~37 drafts, mixed across Season / Weekly Winners / Eliminator / Superflex.
+`.default_field_corpus_path()` resolves the newest `boards_*.json` (preferring an in-repo `inst/data/field_corpus/` if vendored, then the `bestball-bro-data` sibling repo); pass `export_path` to override. The corpus is opponent-only (hashed `user_id`, `is_owner` flag, `/v1/user` dropped) but shares the raw scraper schema, so the parser is unchanged. The current sample is ~51 drafts across Season / Weekly Winners / Eliminator / Superflex. The old raw `inst/data/scraped_drafts/udbb-scraper-*.json` export and its manual `-latest` copy step are **retired** (see the lineage note below).
 
-> **Two scraper lineages — don't conflate them.** This `inst/data` export is the **old, raw** lineage: a **local-dev-only** input, un-stripped (raw `user_id` UUIDs + `/v1/user` envelopes), and **git-ignored — never committed**. The **new** field-calibration corpus is the *stripped* `bestball-bro-data/sources/field/boards_<date>.json` (opponent-only, hashed `user_id`, `is_owner` flag, `/v1/user` dropped). Production does **not** depend on the raw local file: `deploy_ev_blocks.R::.resolve_field_targets` uses it only as a local-dev first choice and falls back in CI to the committed clean digest `inst/data/field_targets/<slate>.json` (summary stats, no identifiers) or ADP defaults. See [ARCHITECTURE.md](ARCHITECTURE.md) ("Two scraper-ingestion lineages"). _(Retiring the old local lineage is a pending hub decision.)_
+> **One field-data ingestion path (the old raw lineage is retired, PR #38).** `load_scraped_drafts()` now resolves the **privacy-stripped** field corpus `bestball-bro-data/sources/field/boards_<date>.json` (opponent-only, hashed `user_id`, `is_owner` flag, `/v1/user` dropped), via `.default_field_corpus_path()`. It shares the raw scraper schema, so the parser is unchanged. The **old raw** `inst/data/scraped_drafts/udbb-scraper-*.json` export — un-stripped, **git-ignored, never committed** — is no longer referenced by any default and is slated for local deletion. Production was always on the committed clean digest `inst/data/field_targets/<slate>.json` (summary stats, no identifiers) via `deploy_ev_blocks.R::.resolve_field_targets`. See [ARCHITECTURE.md](ARCHITECTURE.md) ("Two scraper-ingestion lineages").
 
 ### API
 
