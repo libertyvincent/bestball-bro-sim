@@ -233,6 +233,8 @@ inst/data/scraped_drafts/udbb-scraper-latest.json
 
 Exports are 5–10 MB each and are git-ignored (`inst/data/scraped_drafts/*.json`). Re-publish empirics whenever a fresh export is dropped in. The current sample is ~37 drafts, mixed across Season / Weekly Winners / Eliminator / Superflex.
 
+> **Two scraper lineages — don't conflate them.** This `inst/data` export is the **old, raw** lineage: a **local-dev-only** input, un-stripped (raw `user_id` UUIDs + `/v1/user` envelopes), and **git-ignored — never committed**. The **new** field-calibration corpus is the *stripped* `bestball-bro-data/sources/field/boards_<date>.json` (opponent-only, hashed `user_id`, `is_owner` flag, `/v1/user` dropped). Production does **not** depend on the raw local file: `deploy_ev_blocks.R::.resolve_field_targets` uses it only as a local-dev first choice and falls back in CI to the committed clean digest `inst/data/field_targets/<slate>.json` (summary stats, no identifiers) or ADP defaults. See [ARCHITECTURE.md](ARCHITECTURE.md) ("Two scraper-ingestion lineages"). _(Retiring the old local lineage is a pending hub decision.)_
+
 ### API
 
 ```r
