@@ -1,61 +1,47 @@
-# Position-level availability adjustment: factor math, no double-discount,
-# upstream application, and the Brooks-class review list.
+# Position-level availability: per-player miss-rate math (carries PR #34's
+# clamp), the _meta mechanism marker, and the Brooks-class review list.
 
-test_that(".availability_factor scales a full-17-games player down", {
-  # RB prior 15.2, Clay projects 17 -> factor 15.2/17.
-  expect_equal(.availability_factor(17, 15.2), 15.2 / 17)
+test_that(".availability_p_miss: full-17-games player gets the position rate", {
+  # RB prior 15.2, Clay projects 17 -> p_miss = 1 - 15.2/17.
+  expect_equal(.availability_p_miss(17, 15.2), 1 - 15.2 / 17)
+  expect_equal(.availability_p_miss(17, 16.8), 1 - 16.8 / 17)  # QB
 })
 
-test_that("no double-discount: clay_games <= expected_games is untouched", {
-  # A player Clay already projects below the positional prior (e.g. a
-  # returning-from-injury RB at 10 games) must NOT be discounted again.
-  expect_equal(.availability_factor(10, 15.2), 1)   # 15.2/10 > 1 -> clamp to 1
-  expect_equal(.availability_factor(15.2, 15.2), 1) # exactly at prior -> 1
+test_that("no double-discount: clay_games <= prior -> p_miss = 0", {
+  # A player Clay already projects below the positional prior (suspension,
+  # buried handcuff) must NOT be masked again.
+  expect_equal(.availability_p_miss(10, 15.2), 0)   # 15.2/10 > 1 -> q clamps to 1
+  expect_equal(.availability_p_miss(15.2, 15.2), 0) # exactly at prior -> 0
 })
 
-test_that(".availability_factor is a no-op for missing/degenerate inputs", {
-  expect_equal(.availability_factor(NA, 15.2), 1)
-  expect_equal(.availability_factor(0, 15.2), 1)
-  expect_equal(.availability_factor(17, NA), 1)
-  expect_equal(.availability_factor(17, NULL), 1)
+test_that(".availability_p_miss defaults missing clay_games to a 17-game season", {
+  # ETR/LegUp-only players (no Clay match) inherit the canonical position rate.
+  expect_equal(.availability_p_miss(NA, 15.2), 1 - 15.2 / 17)
+  expect_equal(.availability_p_miss(0, 15.2),  1 - 15.2 / 17)
+  expect_equal(.availability_p_miss(NULL, 15.2), 1 - 15.2 / 17)
 })
 
-.avail_clay_fixture <- function() {
-  list(players = list(
-    list(name = "Full RB",    position = "RB", games = 17,
-         projected_points_half_ppr = 200, projected_points_full_ppr = 230),
-    list(name = "Hurt RB",    position = "RB", games = 10,
-         projected_points_half_ppr = 120, projected_points_full_ppr = 140),
-    list(name = "Full QB",    position = "QB", games = 17,
-         projected_points_half_ppr = 300, projected_points_full_ppr = 300)
-  ))
-}
+test_that(".availability_p_miss is 0 when disabled or prior missing", {
+  expect_equal(.availability_p_miss(17, 15.2, enabled = FALSE), 0)
+  expect_equal(.availability_p_miss(17, NA), 0)
+  expect_equal(.availability_p_miss(17, NULL), 0)
+})
 
-test_that(".apply_availability_to_clay scales upstream and respects the clamp", {
+test_that(".availability_mechanism_marker describes draw-zeroing with priors", {
   prior <- list(enabled = TRUE,
                 expected_games = list(QB = 16.8, RB = 15.2, WR = 16.5, TE = 16.6))
-  out <- .apply_availability_to_clay(.avail_clay_fixture(), prior)
-  pl  <- out$clay_offense$players
-
-  # Full-17 RB scaled by 15.2/17.
-  expect_equal(pl[[1]]$projected_points_half_ppr, 200 * 15.2 / 17)
-  expect_equal(pl[[1]]$projected_points_full_ppr, 230 * 15.2 / 17)
-  # Hurt RB (10 games < 15.2 prior) untouched -- the no-double-discount rule.
-  expect_equal(pl[[2]]$projected_points_half_ppr, 120)
-  # QB scaled by its own milder factor.
-  expect_equal(pl[[3]]$projected_points_half_ppr, 300 * 16.8 / 17)
-
-  # Summary reflects one scaled + one clamped RB.
-  rb <- out$summary$per_position$RB
-  expect_equal(rb$players_scaled, 1L)
-  expect_equal(rb$players_clamped, 1L)
+  m <- .availability_mechanism_marker(prior)
+  expect_equal(m$type, "draw_zeroing")
+  expect_equal(m$missed_week_model, "iid_bernoulli")
+  expect_equal(m$expected_games$RB, 15.2)
+  # canonical 17-game miss rate, RB steepest.
+  expect_equal(m$p_miss_canonical_17g$RB, round(1 - 15.2 / 17, 4))
+  expect_true(m$p_miss_canonical_17g$RB > m$p_miss_canonical_17g$WR)
 })
 
-test_that(".apply_availability_to_clay is a no-op when disabled", {
-  prior <- list(enabled = FALSE, expected_games = list())
-  out <- .apply_availability_to_clay(.avail_clay_fixture(), prior)
-  expect_null(out$summary)
-  expect_equal(out$clay_offense$players[[1]]$projected_points_half_ppr, 200)
+test_that(".availability_mechanism_marker is NULL when disabled", {
+  expect_null(.availability_mechanism_marker(
+    list(enabled = FALSE, expected_games = list())))
 })
 
 test_that("the packaged availability prior loads and has RB steepest", {

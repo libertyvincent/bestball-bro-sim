@@ -174,10 +174,22 @@ publish_ev_blocks_pipeline <- function(
     field   <- generate_field(sid, player_pool = pool, targets = targets,
                               n_teams = cfg$field_teams, seed = seed)
     field_rosters <- split(field$rosters$underdog_id, field$rosters$entry_id)
+    # Score the field with the SAME draw-zeroing the tensor carries, so the
+    # advancement/payout curves are calibrated against an attrition-priced
+    # field (not a too-strong all-17-games one). availability_p_miss comes
+    # from the feed the tensor was built from.
+    avail_pmiss <- vapply(feed$players, function(p) {
+      v <- p$availability_p_miss
+      if (is.null(v) || is.na(v)) 0 else as.numeric(v)
+    }, numeric(1))
+    names(avail_pmiss) <- vapply(feed$players,
+                                 function(p) p$underdog_id %||% NA_character_,
+                                 character(1))
     field_scores  <- simulate_per_stage_scores(
       rosters = field_rosters, positions = positions, layerA_draws = layerA,
       schedule = schedule, lineup_spec = lineup_spec,
-      n_sims = cfg$field_sims, seed = seed)
+      n_sims = cfg$field_sims, seed = seed,
+      availability_p_miss = avail_pmiss)
 
     curves_list <- lapply(cfg$tournament_ids, function(tid) {
       cli::cli_alert_info("publish_ev_blocks [{sid}]: curves [{tid}]")

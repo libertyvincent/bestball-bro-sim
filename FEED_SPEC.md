@@ -114,6 +114,8 @@ The formal v2 consumption contract (required vs optional fields from the extensi
 
 The slate CSV remains the canonical player universe — every UUID in the CSV gets a row in the feed.
 
+**Availability (draw-zeroing) fields.** Each player record carries `availability_p_miss` (per-player missed-week probability, `max(0, 1 - expected_games[pos]/clay_games_i)`), and `_meta` carries an `availability_mechanism` marker (`type: "draw_zeroing"`, `missed_week_model`, `expected_games`, canonical 17-game `p_miss`) — this **replaces** the old `_meta.availability_adjustment` scaling summary. `season_mean`/`season_std`/`season_percentiles`, VOR/tier/`position_rank`, and per-week `mean`/`std`/`percentiles` are all recomputed post-sim from the masked draws. Per-week `mean`/`std` are **unconditional** (they include the miss chance), so `Σ_active weekly.mean ≈ season_mean` still holds. At attrition-heavy positions a weekly `p10` can legitimately be 0 (RB: `p_miss ≈ 0.106 > 0.10`). See DRAW_ZEROING_DESIGN.md.
+
 ### Correlation representation
 
 `[DECISION 2]` How do we represent correlations?
@@ -137,9 +139,11 @@ Schema (long format, the actual columns):
 | `underdog_id` | string | join key |
 | `sim_idx` | int | 1 .. n_sims |
 | `week` | int | 1 .. 18 |
-| `draw_value` | double | half-PPR points for that (player, sim, week); 0 on byes |
+| `draw_value` | double | half-PPR points for that (player, sim, week); **conditional-on-playing** — 0 only on byes |
 
 These are **Layer A (per-player independent) draws** — cross-player correlation is induced downstream by `sample_correlated_draws()` (R/correlation.R). The `sim_idx` axis is NOT a shared "world" across players; do not treat it as one. The path-aligned, correlated representation the extension consumes is Artifact A below.
+
+**Availability (draw-zeroing) lives outside the parquet.** `draw_value` is the *conditional-on-playing* weekly score (0 only on byes). Position-level injury attrition is priced as a separate per-(path, player, week) missed-week mask — kept w.p. `q_i = min(1, expected_games[pos]/clay_games_i)` — that is realized **independently** in (a) the projections season-stat recompute and (b) the Artifact A tensor build. It is deliberately **not** written into the parquet: doing so would entangle the mask with the copula's inverse-CDF map. The per-player rate is published as `availability_p_miss` in the projection record, and the mechanism is described in `_meta.availability_mechanism`. See DRAW_ZEROING_DESIGN.md.
 
 Consumers: Layer B offline (R) only. The extension does **not** fetch this file.
 

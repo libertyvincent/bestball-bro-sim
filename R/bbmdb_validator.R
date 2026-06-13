@@ -48,6 +48,11 @@
 #'   [precompute_layerA_marginals()]. The validator's top-level run
 #'   passes a slate-wide cache so per-pod calls avoid re-sorting Layer
 #'   A draws.
+#' @param availability_p_miss Optional named numeric vector
+#'   (`underdog_id -> p_miss`). When supplied, an independent Bernoulli
+#'   missed-week mask (`q = 1 - p_miss`) is applied post-inverse-CDF via
+#'   [.mask_matrix_list()] -- the same draw-zeroing the tensor build applies --
+#'   so the validator prices availability. `NULL` (default) = no mask.
 #' @return A list with:
 #'   \itemize{
 #'     \item `predicted_xadv` -- named numeric vector
@@ -67,7 +72,8 @@ predict_pod_xadv <- function(pod_rosters,
                              n_sims = 10000L,
                              seed = NULL,
                              corr_params = default_corr_params,
-                             precomputed_marginals = NULL) {
+                             precomputed_marginals = NULL,
+                             availability_p_miss = NULL) {
   if (!is.list(pod_rosters) || length(pod_rosters) == 0L) {
     cli::cli_abort("`pod_rosters` must be a non-empty list of entry_id -> roster.")
   }
@@ -104,6 +110,17 @@ predict_pod_xadv <- function(pod_rosters,
     output_format         = "matrix_list",
     precomputed_marginals = precomputed_marginals
   )
+
+  # Draw-level availability: price missed weeks on the SAME conditional draws
+  # the tensor build masks, so the validator scores teams with the shipped
+  # availability (apples-to-apples vs BBMDB actuals, which include injuries).
+  # Default NULL -> no mask (synthetic-fixture tests are unaffected).
+  if (!is.null(availability_p_miss)) {
+    q <- 1 - availability_p_miss[union_ids]
+    q[is.na(q)] <- 1
+    names(q) <- union_ids
+    ml <- .mask_matrix_list(ml, q, seed)
+  }
 
   # Restrict to the qualifier-stage ranking weeks. matrix_list is keyed
   # by character week numbers from sample_correlated_draws.
@@ -303,6 +320,17 @@ validate_xadv_against_bbmdb <- function(bbmdb_path,
   positions <- .positions_from_feed(enriched_feed)
   schedule  <- .schedule_from_feed(enriched_feed)
 
+  # Per-player availability miss-rate, so the validator scores teams with the
+  # shipped draw-zeroing (the tensor masks; the validator must too, else it
+  # prices teams ~1/q hot vs BBMDB actuals, which carry real injuries).
+  avail_pmiss <- vapply(enriched_feed$players, function(p) {
+    v <- p$availability_p_miss
+    if (is.null(v) || is.na(v)) 0 else as.numeric(v)
+  }, numeric(1))
+  names(avail_pmiss) <- vapply(enriched_feed$players,
+                               function(p) p$underdog_id %||% NA_character_,
+                               character(1))
+
   # ID-system bridge: the scraper's player UUIDs come from Underdog's live
   # `/v1/slates/<sid>/players` endpoint; the slate CSV (which seeds the
   # blender feed) uses a *different* Underdog UUID system for the same
@@ -389,7 +417,8 @@ validate_xadv_against_bbmdb <- function(bbmdb_path,
       advance_n             = advance_n,
       n_sims                = n_sims,
       seed                  = base_seed + i,
-      precomputed_marginals = marginals
+      precomputed_marginals = marginals,
+      availability_p_miss   = avail_pmiss
     )
     for (eid in names(res$predicted_xadv)) {
       idx <- which(apples$underdog_entry_id == eid & apples$draft_id == d_id)

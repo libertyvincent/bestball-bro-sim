@@ -157,6 +157,12 @@ build_ev_draws <- function(feed, layerA_draws, slate_id,
     seed          = seed,
     output_format = "matrix_list")
 
+  # Draw-level availability mask (Stage 2): zero each player's missed weeks,
+  # using the SAME per-player rate as the projections stat recompute but
+  # INDEPENDENTLY realized (FEED_SPEC: tensor paths are not the parquet sims).
+  # Applied AFTER the copula inverse-CDF so it never entangles with the latent.
+  ml <- .apply_availability_mask(ml, feed, top_ids, seed)
+
   drawn_weeks <- sort(as.integer(names(ml)))
   weeks <- intersect(sort(as.integer(weeks)), drawn_weeks)
   if (length(weeks) == 0L) {
@@ -198,6 +204,33 @@ build_ev_draws <- function(feed, layerA_draws, slate_id,
     slate_id    = slate_id,
     lineup_spec = lineup_spec
   ), class = "bbbro_ev_draws")
+}
+
+#' Per-player kept-probability `q = 1 - availability_p_miss` from a feed
+#'
+#' Players absent from the feed or missing `availability_p_miss` default to
+#' `q = 1` (no mask), matching the no-availability behavior for synthetic
+#' fixtures.
+#' @keywords internal
+.availability_q_from_feed <- function(feed, player_ids) {
+  q <- stats::setNames(rep(1, length(player_ids)), player_ids)
+  for (p in feed$players) {
+    uid <- p$underdog_id
+    if (is.null(uid) || !(uid %in% player_ids)) next
+    pm <- p$availability_p_miss
+    if (!is.null(pm) && !is.na(pm)) q[[uid]] <- 1 - as.numeric(pm)
+  }
+  q
+}
+
+#' Apply the draw-level availability mask to a feed's correlated draws
+#'
+#' Thin wrapper: derives per-player `q` from the feed's `availability_p_miss`
+#' and delegates to [.mask_matrix_list()] (shared with [predict_pod_xadv()] so
+#' the tensor and validator scoring paths price availability identically).
+#' @keywords internal
+.apply_availability_mask <- function(ml, feed, player_ids, seed = NULL) {
+  .mask_matrix_list(ml, .availability_q_from_feed(feed, player_ids), seed)
 }
 
 #' Write Artifact A to disk (raw int16 tensor + JSON sidecar)

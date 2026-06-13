@@ -1,13 +1,18 @@
 # ============================================================================
-# Position-level availability adjustment
+# Position-level availability: draw-level game-zeroing
 # ============================================================================
 # Clay projects starter-caliber players at ~17 games regardless of position;
-# the market prices injury attrition (steepest at RB). We scale Clay's points
-# by a per-position availability factor BEFORE the calibration curve is built
-# and before Clay's points enter the blend, so all three sources -- Clay
-# direct and ETR/LegUp via the Clay-fit rank curve -- inherit the corrected
-# level. See inst/adjustments/availability.yaml for the prior and its basis,
-# and inst/scripts/diag_rb_market_gap.R for the diagnosis.
+# the market prices injury attrition (steepest at RB). Rather than scale points
+# at the mean (PR #34), availability is priced as a per-(path, player, week)
+# missed-week MASK driven by the position prior: each active week is kept with
+# probability q_i = min(1, expected_games[pos] / clay_games_i). The points that
+# enter the blend and the calibration curve are now UNSCALED (conditional-on-
+# playing); the prior(/clay_games) only sets the per-player miss rate
+# `availability_p_miss` stamped onto each feed record. The mask is then applied
+# downstream -- in the Layer A season-stat recompute (R/simulate.R) and in the
+# tensor build (R/ev_blocks.R) -- as the same process, independently realized.
+# See DRAW_ZEROING_DESIGN.md, inst/adjustments/availability.yaml, and
+# inst/scripts/diag_rb_market_gap.R for the diagnosis.
 
 #' Load the per-position availability prior
 #'
@@ -31,92 +36,58 @@
   )
 }
 
-#' Availability factor for one player
+#' Per-player missed-week probability
 #'
-#' `min(1, expected_games_pos / clay_games)`. Computed RELATIVE to Clay's
-#' own per-player games projection so a player Clay already projects below
-#' the positional prior is NOT discounted again -- the factor clamps to 1.
-#' Missing/non-positive `clay_games` or a missing prior returns 1 (no-op).
+#' `p_miss = max(0, 1 - min(1, expected_games_pos / clay_games))`. The kept
+#' fraction `q = min(1, expected_games_pos / clay_games)` is computed RELATIVE
+#' to Clay's own per-player games projection, so a player Clay already projects
+#' at/below the positional prior gets `q = 1` (`p_miss = 0`) -- no second
+#' discount on suspensions/known absences. This carries PR #34's per-player
+#' clamp exactly, now as a mask rate instead of a point scale. A missing
+#' `clay_games` defaults to a full 17-game season, giving the canonical
+#' position rate `1 - prior/17` (the right level for ETR/LegUp-only players,
+#' who previously inherited the position-level scaling via the calibration
+#' spline). A disabled prior or missing positional prior returns `0` (no mask).
 #'
-#' @param clay_games Clay's projected games for the player.
+#' @param clay_games Clay's projected games for the player (or `NA`).
 #' @param expected_games_pos Positional prior (e.g. RB 15.2).
-#' @return Numeric scalar in (0, 1].
+#' @param enabled Whether the availability prior is enabled.
+#' @return Numeric scalar in [0, 1).
 #' @keywords internal
-.availability_factor <- function(clay_games, expected_games_pos) {
-  if (is.null(expected_games_pos) || is.na(expected_games_pos)) return(1)
-  if (is.null(clay_games) || is.na(clay_games) || clay_games <= 0) return(1)
-  min(1, as.numeric(expected_games_pos) / as.numeric(clay_games))
+.availability_p_miss <- function(clay_games, expected_games_pos,
+                                 enabled = TRUE) {
+  if (!isTRUE(enabled)) return(0)
+  if (is.null(expected_games_pos) || is.na(expected_games_pos)) return(0)
+  g <- if (is.null(clay_games) || is.na(clay_games) || clay_games <= 0) {
+    17
+  } else {
+    as.numeric(clay_games)
+  }
+  q <- min(1, as.numeric(expected_games_pos) / g)
+  max(0, 1 - q)
 }
 
-#' Scale Clay's per-player season points by the availability factor
+#' Build the `_meta.availability_mechanism` marker
 #'
-#' Mutates `projected_points_half_ppr` (and `_full_ppr` for parity) on each
-#' Clay player record, returning the adjusted `clay_offense` plus a
-#' per-position summary for `_meta` logging. MUST run upstream of
-#' [build_calibration_curves()] and [.clay_rows_for_slate()] so the whole
-#' consensus inherits the corrected level (the calibration curve and Clay's
-#' direct blend contribution both read `projected_points_half_ppr`).
+#' Replaces PR #34's `availability_adjustment` scaling summary. Describes the
+#' draw-zeroing mechanism, the priors, and the canonical (`clay_games = 17`)
+#' per-position miss rates. Asserted by markers (not shas) per the process
+#' rules. Returns `NULL` when the prior is disabled.
 #'
-#' @param clay_offense Parsed Clay offense feed (`$players` list).
 #' @param prior Result of [.load_availability_prior()].
-#' @return List with `clay_offense` (possibly adjusted) and `summary` (NULL
-#'   when disabled, else a list logged into the feed `_meta`).
 #' @keywords internal
-.apply_availability_to_clay <- function(clay_offense, prior) {
-  if (is.null(clay_offense) || !isTRUE(prior$enabled)) {
-    return(list(clay_offense = clay_offense, summary = NULL))
-  }
-  E       <- prior$expected_games
-  players <- clay_offense$players %||% list()
-  agg     <- list()  # pos -> c(n, sumf, clamped)
-
-  for (k in seq_along(players)) {
-    p   <- players[[k]]
-    pos <- p$position %||% NA_character_
-    if (is.na(pos) || is.null(E[[pos]])) next
-
-    f <- .availability_factor(p$games, E[[pos]])
-    if (!is.null(p$projected_points_half_ppr)) {
-      players[[k]]$projected_points_half_ppr <-
-        as.numeric(p$projected_points_half_ppr) * f
-    }
-    if (!is.null(p$projected_points_full_ppr)) {
-      players[[k]]$projected_points_full_ppr <-
-        as.numeric(p$projected_points_full_ppr) * f
-    }
-
-    a <- agg[[pos]] %||% c(n = 0, sumf = 0, clamped = 0)
-    a["n"]    <- a["n"] + 1
-    a["sumf"] <- a["sumf"] + f
-    if (f >= 1) a["clamped"] <- a["clamped"] + 1  # untouched (no double-discount)
-    agg[[pos]] <- a
-  }
-  clay_offense$players <- players
-
-  per_position <- lapply(names(E), function(pos) {
-    a <- agg[[pos]]
-    if (is.null(a) || a[["n"]] == 0) {
-      return(list(expected_games = E[[pos]], players_scaled = 0L,
-                  players_clamped = 0L, mean_factor = 1))
-    }
-    list(
-      expected_games  = E[[pos]],
-      players_scaled  = as.integer(a[["n"]] - a[["clamped"]]),
-      players_clamped = as.integer(a[["clamped"]]),
-      mean_factor     = round(a[["sumf"]] / a[["n"]], 4)
-    )
-  })
-  names(per_position) <- names(E)
-
+.availability_mechanism_marker <- function(prior) {
+  if (!isTRUE(prior$enabled)) return(NULL)
+  E <- prior$expected_games
+  p_miss_canon <- lapply(E, function(g) round(1 - as.numeric(g) / 17, 4))
+  names(p_miss_canon) <- names(E)
   list(
-    clay_offense = clay_offense,
-    summary = list(
-      mechanism = paste0(
-        "clay points scaled by min(1, expected_games[pos] / clay_games) ",
-        "upstream of rank calibration"),
-      expected_games = E,
-      per_position   = per_position
-    )
+    type                 = "draw_zeroing",
+    missed_week_model    = "iid_bernoulli",
+    applied_over         = "17 active (non-bye) weeks of the 18-week grid",
+    rate                 = "p_miss_i = max(0, 1 - expected_games[pos] / clay_games_i)",
+    expected_games       = E,
+    p_miss_canonical_17g = p_miss_canon
   )
 }
 

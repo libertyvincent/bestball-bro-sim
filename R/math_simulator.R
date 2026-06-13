@@ -46,6 +46,11 @@
 #'   [precompute_layerA_marginals()]. Threaded through to 3b-2 to skip
 #'   the per-roster sort; supply once and reuse across many rosters in
 #'   batch contexts ([simulate_teams()] does this automatically).
+#' @param availability_p_miss Optional named numeric vector
+#'   (`underdog_id -> p_miss`). When supplied, the draw-level availability mask
+#'   (`q = 1 - p_miss`) is applied post-inverse-CDF via [.mask_matrix_list()] --
+#'   the same zeroing the tensor build and curve field-build apply -- so this
+#'   scoring path prices attrition consistently. `NULL` (default) = no mask.
 #' @return A `list` with:
 #'   \itemize{
 #'     \item `weekly_totals` -- numeric matrix `[n_sims x n_weeks]` with
@@ -66,7 +71,8 @@ simulate_team_season <- function(roster,
                                  n_sims = 10000L,
                                  seed = NULL,
                                  weeks = NULL,
-                                 precomputed_marginals = NULL) {
+                                 precomputed_marginals = NULL,
+                                 availability_p_miss = NULL) {
   roster <- unique(as.character(roster))
   if (length(roster) == 0L) {
     cli::cli_abort("`roster` is empty.")
@@ -104,6 +110,16 @@ simulate_team_season <- function(roster,
     precomputed_marginals = precomputed_marginals,
     output_format         = "matrix_list"
   )
+
+  # Draw-level availability: mask the roster's conditional draws post-inv-CDF
+  # at the per-player q (same process as the tensor / curve-field). Default
+  # NULL -> no mask (behavior unchanged). See DRAW_ZEROING_DESIGN.md.
+  if (!is.null(availability_p_miss)) {
+    q <- 1 - availability_p_miss[roster]
+    q[is.na(q)] <- 1
+    names(q) <- roster
+    corr_draws <- .mask_matrix_list(corr_draws, q, seed)
+  }
 
   weekly_totals <- optimize_lineup_totals(
     scores      = corr_draws,
@@ -163,7 +179,8 @@ simulate_teams <- function(rosters,
                            n_sims = 10000L,
                            base_seed = NULL,
                            weeks = NULL,
-                           summarize_only = FALSE) {
+                           summarize_only = FALSE,
+                           availability_p_miss = NULL) {
   if (!is.list(rosters) || length(rosters) == 0L) {
     cli::cli_abort("`rosters` must be a non-empty list of underdog_id vectors.")
   }
@@ -212,7 +229,8 @@ simulate_teams <- function(rosters,
       n_sims                = n_sims,
       seed                  = t_seed,
       weeks                 = weeks,
-      precomputed_marginals = marginals
+      precomputed_marginals = marginals,
+      availability_p_miss   = availability_p_miss
     )
     if (summarize_only) {
       summary_list[[i]] <- res$summary
