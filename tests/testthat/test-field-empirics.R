@@ -137,7 +137,7 @@ test_that("load_scraped_drafts skips incomplete drafts and reports count", {
 test_that("load_scraped_drafts errors loudly when export file is missing", {
   expect_error(
     load_scraped_drafts("inst/data/scraped_drafts/does-not-exist.json"),
-    "Scraper export not found"
+    "Field corpus not found"
   )
 })
 

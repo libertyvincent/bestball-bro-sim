@@ -36,8 +36,13 @@
 #' `event_type` (`"tournament"` vs `"weekly_winner"`) is pulled from
 #' `round_tournament_index` keyed by `tournament_round_id`.
 #'
-#' @param export_path Path to the scraper export JSON. Defaults to the
-#'   canonical local copy.
+#' @param export_path Path to the field-corpus JSON (the privacy-stripped
+#'   `boards_<date>.json` from the `bestball-bro-data` repo). `NULL` (default)
+#'   resolves the newest available corpus via [.default_field_corpus_path()].
+#'   The stripped corpus shares the raw scraper schema (hashed `user_id`,
+#'   `/v1/user` envelopes dropped, player-join reference payloads kept), so it
+#'   parses unchanged. This is now the single field-data ingestion path; the
+#'   old raw `inst/data/scraped_drafts/udbb-scraper-*.json` lineage is retired.
 #' @return A tibble with one row per pick and the columns:
 #'   `draft_id, draft_state, slate_id, tournament_id, tournament_round_id,
 #'   tournament_title, event_type, drafter_slot, drafter_user_id,
@@ -54,16 +59,15 @@
 #'     - `n_drafts_skipped_incomplete` (count filtered out by draft_state)
 #'
 #' @export
-load_scraped_drafts <- function(
-  export_path = "inst/data/scraped_drafts/udbb-scraper-latest.json"
-) {
-  if (!file.exists(export_path)) {
+load_scraped_drafts <- function(export_path = NULL) {
+  if (is.null(export_path)) export_path <- .default_field_corpus_path()
+  if (is.null(export_path) || !file.exists(export_path)) {
     cli::cli_abort(c(
-      "Scraper export not found.",
-      i = "Expected: {.path {export_path}}",
-      i = "Place the latest Chrome-extension export at that path \\
-           (typical name: {.val udbb-scraper-<timestamp>.json}, then copy to \\
-           {.val udbb-scraper-latest.json})."
+      "Field corpus not found.",
+      i = "Expected the privacy-stripped field corpus {.val boards_<date>.json} \\
+           (from the {.pkg bestball-bro-data} repo, {.path sources/field/}).",
+      i = "Pass {.arg export_path}, or check out {.pkg bestball-bro-data} as a \\
+           sibling repo so the newest {.path sources/field/boards_*.json} resolves."
     ))
   }
 
@@ -118,6 +122,26 @@ load_scraped_drafts <- function(
 }
 
 # ---- helpers ----------------------------------------------------------------
+
+#' Resolve the newest privacy-stripped field corpus (`boards_<date>.json`)
+#'
+#' The single field-data ingestion path. Prefers an in-repo committed corpus
+#' (`inst/data/field_corpus/`, if ever vendored) then the canonical
+#' `bestball-bro-data` sibling repo (`sources/field/`). Newest by filename
+#' (`boards_<ISO-date>.json` sorts chronologically). Returns `NULL` if none
+#' found, so [load_scraped_drafts()] can emit a single clear error.
+#' @keywords internal
+.default_field_corpus_path <- function() {
+  dirs <- c(file.path("inst", "data", "field_corpus"),
+            .inst_path("data", "field_corpus"),
+            file.path("..", "bestball-bro-data", "sources", "field"))
+  for (d in dirs) {
+    if (!nzchar(d) || !dir.exists(d)) next
+    hits <- sort(Sys.glob(file.path(d, "boards_*.json")), decreasing = TRUE)
+    if (length(hits) > 0L) return(hits[[1L]])
+  }
+  NULL
+}
 
 #' Build per-slate catalog maps for appearance_id->player_id and
 #' player_id->player_meta from the export's `unkeyed[]` array.

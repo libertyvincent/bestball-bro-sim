@@ -182,8 +182,9 @@ predict_pod_xadv <- function(pod_rosters,
 #' @param bbmdb_path Path to `bbmdb_teams.parquet`. Defaults to the
 #'   canonical local path; pass a different path or skip the run when
 #'   that file isn't present (the test suite does the latter).
-#' @param scraper_path Path to the udbb-scraper export. Defaults to the
-#'   in-repo canonical location.
+#' @param scraper_path Path to the field corpus. `NULL` (default) resolves the
+#'   privacy-stripped `boards_<date>.json` via [load_scraped_drafts()] (the
+#'   single ingestion path; the raw udbb-scraper lineage is retired).
 #' @param slate_ids Character vector of slate IDs to validate. Defaults
 #'   to `"nfl_2026_season"` -- the only slate with the 4-stage
 #'   tournament shape the validator currently understands.
@@ -231,11 +232,10 @@ validate_xadv_against_bbmdb <- function(bbmdb_path,
       i = "Looked for: {.path {bbmdb_path}}"
     ))
   }
-  scraper_path <- scraper_path %||%
-    .inst_path("data/scraped_drafts", "udbb-scraper-latest.json")
-
-  if (verbose) cli::cli_alert_info("Loading BBMDB + scraper")
+  if (verbose) cli::cli_alert_info("Loading BBMDB + field corpus")
   bbmdb <- arrow::read_parquet(bbmdb_path)
+  # NULL scraper_path -> load_scraped_drafts resolves the stripped field corpus
+  # (the single ingestion path; raw udbb-scraper lineage retired).
   picks <- load_scraped_drafts(scraper_path)
 
   # Resolve each entry's tournament config by Underdog UUID. Skip teams
