@@ -10,7 +10,7 @@ suppressMessages(devtools::load_all(".", quiet = TRUE))
 args  <- commandArgs(trailingOnly = TRUE)
 label <- if (length(args)) args[[1]] else "on"
 
-bbmdb_path   <- "C:/Users/vince/Desktop/bbmdb_scraper/data/bbmdb_teams.parquet"
+bbmdb_path   <- bbmdb_corpus_path()
 scraper_path <- .inst_path("data/scraped_drafts", "udbb-scraper-latest.json")
 
 # Blend the feed under the current yaml state, then validate against BBMDB.

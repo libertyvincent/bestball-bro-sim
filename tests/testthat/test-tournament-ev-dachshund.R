@@ -174,7 +174,7 @@ test_that("Dachshund: per-player EV sums to team EV (additivity), every team", {
 # ---- qualifier consistency vs BBMDB (gated, expensive) -------------------------
 
 test_that("real-set: Dachshund qualifier advance prob matches BBMDB (~3 teams) + engine", {
-  bbmdb_path <- "C:/Users/vince/Desktop/bbmdb_scraper/data/bbmdb_teams.parquet"
+  bbmdb_path <- bbmdb_corpus_path()
   if (!file.exists(bbmdb_path)) testthat::skip("BBMDB parquet missing -- gated test.")
   scraper_path <- testthat::test_path("..", "..", "inst", "data",
                                       "scraped_drafts", "udbb-scraper-latest.json")

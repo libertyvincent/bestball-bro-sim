@@ -263,7 +263,7 @@ test_that("validator errors when advance_n >= pod size", {
 # ---- 7. Real-set smoke test (gated on local BBMDB parquet) ----------------
 
 test_that("real-set: BBMDB validation runs end-to-end and Spearman > 0.4", {
-  bbmdb_path <- "C:/Users/vince/Desktop/bbmdb_scraper/data/bbmdb_teams.parquet"
+  bbmdb_path <- bbmdb_corpus_path()
   if (!file.exists(bbmdb_path)) {
     testthat::skip("BBMDB parquet not at canonical local path -- gated test.")
   }

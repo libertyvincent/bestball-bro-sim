@@ -154,7 +154,7 @@ test_that("compute_team_ev runs on the real puppy.yaml (placeholder payouts -> $
 # ---- Puppy qualifier consistency vs BBMDB (gated, expensive) ----------------
 
 test_that("real-set: Puppy qualifier advance prob matches BBMDB (~13 teams) + engine", {
-  bbmdb_path <- "C:/Users/vince/Desktop/bbmdb_scraper/data/bbmdb_teams.parquet"
+  bbmdb_path <- bbmdb_corpus_path()
   if (!file.exists(bbmdb_path)) testthat::skip("BBMDB parquet missing -- gated test.")
   scraper_path <- testthat::test_path("..", "..", "inst", "data",
                                       "scraped_drafts", "udbb-scraper-latest.json")

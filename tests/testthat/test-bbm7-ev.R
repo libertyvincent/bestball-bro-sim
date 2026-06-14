@@ -162,7 +162,7 @@ test_that("simulate_per_stage_scores is deterministic under a fixed seed", {
 # ---- End-to-end run on real Season slate (gated, expensive) ----------------
 
 test_that("real-set: BBM7 money-conservation gap < 15% of expected", {
-  bbmdb_path <- "C:/Users/vince/Desktop/bbmdb_scraper/data/bbmdb_teams.parquet"
+  bbmdb_path <- bbmdb_corpus_path()
   if (!file.exists(bbmdb_path)) {
     testthat::skip("BBMDB parquet missing -- gated test.")
   }
@@ -229,7 +229,7 @@ test_that("real-set: BBM7 money-conservation gap < 15% of expected", {
 })
 
 test_that("real-set: qualifier advance prob from compute_team_bbm7_ev matches 3b-5 xAdv", {
-  bbmdb_path <- "C:/Users/vince/Desktop/bbmdb_scraper/data/bbmdb_teams.parquet"
+  bbmdb_path <- bbmdb_corpus_path()
   if (!file.exists(bbmdb_path)) {
     testthat::skip("BBMDB parquet missing -- gated test.")
   }
