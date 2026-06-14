@@ -39,7 +39,7 @@ LAYERA_N <- 4000L
 POD_N    <- 4000L
 BASELINE <- 2 / 12
 
-bbmdb_path   <- "C:/Users/vince/Desktop/bbmdb_scraper/data/bbmdb_teams.parquet"
+bbmdb_path   <- bbmdb_corpus_path()
 scraper_path <- file.path("inst", "data", "scraped_drafts", "udbb-scraper-latest.json")
 sources_path <- file.path("inst", "data", "sources", "_manifest.yaml")
 slates_path  <- file.path("inst", "data", "slates",  "_manifest.yaml")

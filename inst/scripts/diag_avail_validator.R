@@ -1,6 +1,6 @@
 # Capture xAdv-vs-BBMDB validator aggregates with availability ON.
 suppressMessages(devtools::load_all(".", quiet = TRUE))
-bbmdb_path   <- "C:/Users/vince/Desktop/bbmdb_scraper/data/bbmdb_teams.parquet"
+bbmdb_path   <- bbmdb_corpus_path()
 scraper_path <- file.path("inst", "data", "scraped_drafts",
                           "udbb-scraper-latest.json")
 

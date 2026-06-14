@@ -4,7 +4,7 @@
 # actual points-space ratio / MAE / Spearman. Expected ~1.008 / <=0.124 / >0.3.
 suppressMessages(devtools::load_all(".", quiet = TRUE))
 
-bbmdb    <- "C:/Users/vince/Desktop/bbmdb_scraper/data/bbmdb_teams.parquet"
+bbmdb    <- bbmdb_corpus_path()
 scraper  <- "inst/data/scraped_drafts/udbb-scraper-latest.json"
 stopifnot(file.exists(bbmdb), file.exists(scraper))
 
