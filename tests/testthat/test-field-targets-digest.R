@@ -40,11 +40,24 @@ test_that("the committed digest is present, parses, and is usable by generate_fi
                unname(d$position_means[c("QB","RB","WR","TE")]), tolerance = 0.4)
 })
 
-# Path to the scraped export (the digest's source of truth) for the
-# fidelity proof. load_scraped_drafts() defaults to a wd-relative path;
-# testthat runs in tests/testthat, so resolve it explicitly.
-.scraped_path <- function() testthat::test_path(
-  "..", "..", "inst", "data", "scraped_drafts", "udbb-scraper-latest.json")
+# Path to the field corpus (the digest's source of truth) for the fidelity
+# proof. The digest is written from load_scraped_drafts() with no arg, which
+# resolves the newest privacy-stripped corpus via .default_field_corpus_path()
+# (the udbb-scraper-latest lineage is retired). Resolve the same way here so the
+# round-trip compares the digest against exactly the source it was built from.
+# Returns "" when no corpus is present (CI), so the skip guard fires.
+.scraped_path <- function() {
+  # testthat runs in tests/testthat, so .default_field_corpus_path()'s
+  # wd-relative `../bestball-bro-data` lookup misses. Resolve the sibling repo
+  # from the package root instead (newest boards_*.json, matching the default
+  # resolver the digest was built through).
+  root <- bestballBroSim:::.find_package_root()
+  if (is.null(root)) return("")
+  hits <- sort(Sys.glob(file.path(dirname(root), "bestball-bro-data",
+                                  "sources", "field", "boards_*.json")),
+               decreasing = TRUE)
+  if (length(hits) > 0L) hits[[1L]] else ""
+}
 
 test_that("digest round-trips the scraped targets exactly (numeric identity)", {
   skip_if_not(file.exists(.scraped_path()), "Scraped drafts absent -- digest-source comparison skipped.")

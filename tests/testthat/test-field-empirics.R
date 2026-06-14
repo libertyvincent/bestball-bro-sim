@@ -168,29 +168,44 @@ test_that("position counts sum to roster_total per drafter (QB/RB/WR/TE only)", 
   expect_true(all(per_drafter$count == 3L))
 })
 
-test_that("position counts exclude non-QBRBWRTE positions", {
+test_that("CB is remapped to WR at the source; genuinely non-fantasy positions excluded", {
   payload <- make_mini_export()
-  # Add a CB to the catalog and the picks; should be excluded from counts.
+  # A two-way player Underdog labels by their defensive position (CB, the
+  # Travis Hunter case) is remapped to WR at the source -- see
+  # `.normalize_fantasy_position`, applied in load_scraped_drafts -- so it is
+  # COUNTED as WR, not dropped. A genuinely non-fantasy position (K) has no
+  # remap and stays excluded by the empirics QB/RB/WR/TE filter.
   payload$unkeyed[[1]]$raw_response$players <- c(
     payload$unkeyed[[1]]$raw_response$players,
-    list(list(id = "p-cb1", first_name = "X", last_name = "CB",
-              position_name = "CB", team_id = "TEAM-A"))
+    list(list(id = "p-cb1", first_name = "Two", last_name = "Way",
+              position_name = "CB", team_id = "TEAM-A"),
+         list(id = "p-k1", first_name = "Kick", last_name = "Er",
+              position_name = "K", team_id = "TEAM-A"))
   )
   payload$unkeyed[[2]]$raw_response$appearances <- c(
     payload$unkeyed[[2]]$raw_response$appearances,
-    list(list(id = "a-cb1", player_id = "p-cb1"))
+    list(list(id = "a-cb1", player_id = "p-cb1"),
+         list(id = "a-k1", player_id = "p-k1"))
   )
   payload$drafts[[1]]$raw_response$draft$picks <- c(
     payload$drafts[[1]]$raw_response$draft$picks,
     list(list(number = 7, draft_entry_id = "e-1", appearance_id = "a-cb1",
               projection_adp = "7", projection_points = "100", points = "0",
+              swapped = FALSE),
+         list(number = 8, draft_entry_id = "e-1", appearance_id = "a-k1",
+              projection_adp = "8", projection_points = "90", points = "0",
               swapped = FALSE))
   )
   p <- write_mini_export(payload)
   picks <- load_scraped_drafts(p)
-  expect_true("CB" %in% picks$position_name)
+  # CB has been remapped to WR at the source; K is untouched.
+  expect_false("CB" %in% picks$position_name)
+  expect_true("K" %in% picks$position_name)
   ec <- empirical_position_counts(picks)
+  # The remapped CB now counts as WR; the non-fantasy K stays excluded.
+  expect_true("WR" %in% ec$position)
   expect_false("CB" %in% ec$position)
+  expect_false("K" %in% ec$position)
 })
 
 # ---- empirical_stack_patterns -----------------------------------------------
