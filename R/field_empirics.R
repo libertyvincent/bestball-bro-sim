@@ -115,6 +115,15 @@ load_scraped_drafts <- function(export_path = NULL) {
     do.call(rbind, per_draft_rows)
   }
 
+  # Canonical fantasy-position remap at the source: Underdog's live API labels
+  # two-way players by their defensive position (Travis Hunter as `CB`, the rare
+  # ex-fullback as `FB`); they only score at their offensive position. Apply the
+  # same remap the cross-source bridge uses (see `.normalize_fantasy_position`)
+  # so every raw-scraped consumer -- the field-empirics buckets, the
+  # field_targets digest, the drafter table -- inherits corrected positions and
+  # agrees with the slate-CSV/feed paths, which already resolve them upstream.
+  out$position_name <- .normalize_fantasy_position(out$position_name)
+
   attr(out, "exported_at") <- export$exported_at %||% NA_character_
   attr(out, "n_drafts_input") <- n_input
   attr(out, "n_drafts_skipped_incomplete") <- n_skipped
